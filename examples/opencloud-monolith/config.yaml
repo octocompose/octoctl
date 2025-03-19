@@ -1,0 +1,10 @@
+projectID: jRganCCBmeSvU6YM5AvLhn
+
+include:
+  - url: ./octocompose-chart/config/core.yaml
+  - url: ./octocompose-chart/config/collabora.yaml
+
+octoctl:
+  operator: baremetal
+
+

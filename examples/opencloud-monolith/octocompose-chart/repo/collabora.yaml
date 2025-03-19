@@ -1,0 +1,3 @@
+include:
+  - url: ./services/collaboration.yaml
+  - url: ./services/collabora.yaml

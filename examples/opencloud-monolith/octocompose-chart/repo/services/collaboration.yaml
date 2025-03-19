@@ -1,0 +1,24 @@
+services:
+  collaboration:
+    baremetal:
+      binary:
+        - os: linux
+          arch: amd64
+          url: https://github.com/opencloud-eu/opencloud/releases/download/v1.1.0/opencloud-1.1.0-linux-amd64
+          sha256Url: https://github.com/opencloud-eu/opencloud/releases/download/v1.1.0/opencloud-1.1.0-linux-amd64.sha256
+      source:
+        repo: https://github.com/opencloud-eu/opencloud.git
+        ref: refs/tags/v1.1.0
+        buildCmds:
+          - make generate
+          - make -C opencloud build
+        binary: opencloud/bin/opencloud
+    docker:
+      registry: docker.io
+      image: opencloudeu/opencloud-rolling
+      tag: v1.1.0
+      build:
+        repo: https://github.com/opencloud-eu/opencloud.git
+        ref: refs/tags/v1.1.0
+        dockerfile: services/collaboration/Dockerfile
+        context: services/collaboration
