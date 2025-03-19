@@ -8,6 +8,14 @@
 go run ./cmd/octoctl/... config show -c config.yaml
 ```
 
+### Docker compose
+
+```
+go run ./cmd/octoctl/... config show -c config.yaml > compose.yaml
+```
+
+Run `docker compose up` and fix errors, then run it again, until it starts the services.
+
 ## Overview
 
 `octoctl` is the command-line tool for [OctoCompose](https://octocompose.dev/).

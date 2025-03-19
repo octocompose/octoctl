@@ -113,7 +113,7 @@ func ParseSlice[TSlice any](sections []string, key string, config map[string]any
 		err  error
 	)
 
-	if len(sections) > 1 {
+	if len(sections) > 0 {
 		data, err = walkMap(sections, config)
 		if err != nil {
 			return err

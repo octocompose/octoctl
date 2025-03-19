@@ -1,27 +1,6 @@
 services:
   collabora:
-    baremetal:
-      binary:
-        - os: linux
-          arch: amd64
-          url: https://github.com/demoproject/demoproject/releases/download/v2.0.0/demoproject-collaboration-2.0.0-linux-amd64
-          sha256Url: https://github.com/demoproject/demoproject/releases/download/v2.0.0/demoproject-collaboration-2.0.0-linux-amd64.sha256
-          # Binary inside the archive.
-          binary: demoproject-collaboration
-      source:
-        repo: https://github.com/CollaboraOnline/online.git
-        ref: refs/tags/24.04.12.2.1
-        buildCmds:
-          - GOOS={{OS}} GOARCH={{ARCH}} make demoproject-collaboration
-        binary: dist/{{OS}}/{{ARCH}}/demoproject-collaboration
     docker:
       registry: docker.io
       image: collabora/code
-      tag: cp-24.04.12-4
-      build:
-        repo: https://github.com/CollaboraOnline/online.git
-        ref: refs/tags/cp-24.04.12-4
-        dockerfile: docker/from-packages/Dockerfile
-        context: docker/from-packages
-        args:
-          - "nobrand=yes"
+      tag: 24.04.13.2.1

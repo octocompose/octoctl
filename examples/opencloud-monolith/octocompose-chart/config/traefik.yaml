@@ -1,0 +1,76 @@
+configs:
+  traefik:
+    domain: "traefik.opencloud.test"
+    # admin:admin basic auth
+    auth: "admin:$$apr1$$4vqie50r$$YQAmQdtmz5n9rEALhxJ4l."
+    dashboard: "false"
+    log_level: "ERROR"
+    acme:
+      email: "example@example.org"
+      storage: "/certs/acme.json"
+      http: true
+      caserver: "https://acme-v02.api.letsencrypt.org/directory"
+
+repos:
+  services:
+    traefik:
+      docker:
+        registry: docker.io
+        image: library/traefik
+        tag: v3.3.1
+
+services:
+  traefik:
+    image: "{{.repos.services.traefik.docker.registry}}/{{.repos.services.traefik.docker.image}}:{{.repos.services.traefik.docker.tag}}"
+    # release notes: https://github.com/traefik/traefik/releases
+    networks:
+      opencloud-net:
+    command:
+      - "--log.level={{.configs.traefik.log_level}}"
+      # letsencrypt configuration
+      - "--certificatesResolvers.http.acme.email={{.configs.traefik.acme.email}}"
+      - "--certificatesResolvers.http.acme.storage=/certs/acme.json"
+      - "--certificatesResolvers.http.acme.httpChallenge.entryPoint=http"
+      - "--certificatesResolvers.http.acme.caserver={{.configs.traefik.acme.caserver}}"
+      # enable dashboard
+      - "--api.dashboard={{.configs.traefik.dashboard}}"
+      # define entrypoints
+      - "--entryPoints.http.address=:80"
+      - "--entryPoints.http.http.redirections.entryPoint.to=https"
+      - "--entryPoints.http.http.redirections.entryPoint.scheme=https"
+      - "--entryPoints.https.address=:443"
+      # change default timeouts for long-running requests
+      # this is needed for webdav clients that do not support the TUS protocol
+      - "--entryPoints.https.transport.respondingTimeouts.readTimeout=12h"
+      - "--entryPoints.https.transport.respondingTimeouts.writeTimeout=12h"
+      - "--entryPoints.https.transport.respondingTimeouts.idleTimeout=3m"
+      # docker provider (get configuration from container labels)
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--providers.docker.exposedByDefault=false"
+      # access log
+      - "--accessLog=true"
+      - "--accessLog.format=json"
+      - "--accessLog.fields.headers.names.X-Request-Id=keep"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro"
+      - "certs:/certs"
+    labels:
+      - "traefik.enable={{.configs.traefik.dashboard}}"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users={{.configs.traefik.auth}}"
+      - "traefik.http.routers.traefik.entrypoints=https"
+      - "traefik.http.routers.traefik.rule=Host(`{{.configs.traefik.domain}}`)"
+      - "traefik.http.routers.traefik.middlewares=traefik-auth"
+      - "traefik.http.routers.traefik.tls.certresolver=http"
+      - "traefik.http.routers.traefik.service=api@internal"
+    logging:
+      driver: "{{.configs.opencloud.docker.log_driver}}"
+    restart: "{{.configs.opencloud.docker.restart}}"
+
+volumes:
+  certs:
+
+networks:
+  opencloud-net:

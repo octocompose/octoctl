@@ -1,6 +1,7 @@
 # Service configurations
 globals:
   opencloud:
+    additionalServices: "notifications"
     scheme: https
     domain:
       oc: cloud.opencloud.test
@@ -38,31 +39,42 @@ globals:
       log_driver: "local"
       volumes:
         config: "opencloud-config"
+        data: "opencloud-data"
 
-octoctl:
-  repos:
-    core:
-      url: ../repo/core.yaml
+repos:
+  include:
+    - url: ../repo/core.yaml
 
 services:
   opencloud:
+    octocompose:
+      config:
+        globals: opencloud
+      health:
+        - tool: check-tcp
+          args: 
+            - "{{.configs.opencloud.nats.port}}"
+          successThreshold: 1
+          failureThreshold: 3
+      validate:
+        - tool: check-open-tcp-port
+          operators: [baremetal]
+          args:
+            - "{{.configs.opencloud.nats.port}}"
+
+    image: "{{.repos.services.opencloud.docker.registry}}/{{.repos.services.opencloud.docker.image}}:{{.repos.services.opencloud.docker.tag}}"
     restart: "{{.configs.opencloud.docker.restart}}"
-    config:
-      globals: opencloud
-    health:
-      - tool: check-tcp
-        args: 
-          - "{{.configs.opencloud.nats.port}}"
-        successThreshold: 1
-        failureThreshold: 3
-    validate:
-      - tool: check-open-tcp-port
-        operators: [baremetal]
-        args:
-          - "{{.configs.opencloud.nats.port}}"
+    networks:
+      opencloud-net:
+    entrypoint:
+      - /bin/sh
+    # run opencloud init to initialize a configuration file with random secrets
+    # it will fail on subsequent runs, because the config file already exists
+    # therefore we ignore the error and then start the opencloud server
+    command: ["-c", "opencloud init || true; opencloud server"]
     environment:
       # enable services that are not started automatically
-      OC_ADD_RUN_SERVICES: ${START_ADDITIONAL_SERVICES}
+      OC_ADD_RUN_SERVICES: "{{.configs.opencloud.additionalServices}}"
       OC_URL: "{{.configs.opencloud.scheme}}://{{.configs.opencloud.domain.oc}}"
       OC_LOG_LEVEL: "{{.configs.opencloud.log.level}}"
       OC_LOG_COLOR: "{{.configs.opencloud.log.color}}"
@@ -92,5 +104,21 @@ services:
       COMPANION_DOMAIN: "{{.configs.opencloud.domain.companion}}"
       # enable to allow using the banned passwords list
       OC_PASSWORD_POLICY_BANNED_PASSWORDS_LIST: banned-password-list.txt
+    volumes:
+      - "{{.repos.files.opencloud_app_registry.path}}:/etc/opencloud/app-registry.yaml"
+      - "{{.repos.files.opencloud_csp.path}}:/etc/opencloud/csp.yaml"
+      - "{{.repos.files.banned_password_list.path}}:/etc/opencloud/banned-password-list.txt"
+      - "{{.configs.opencloud.docker.volumes.config}}:/etc/opencloud"
+      - "{{.configs.opencloud.docker.volumes.data}}:/var/lib/opencloud"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.opencloud.entrypoints=https"
+      - "traefik.http.routers.opencloud.rule=Host(`{{.configs.opencloud.domain.oc}}`)"
+      - "traefik.http.routers.opencloud.tls.certresolver=http"
+      - "traefik.http.routers.opencloud.service=opencloud"
+      - "traefik.http.services.opencloud.loadbalancer.server.port=9200"
     logging:
       driver: "{{.configs.opencloud.docker.log_driver}}"
+volumes:
+  opencloud-config:
+  opencloud-data:

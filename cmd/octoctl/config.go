@@ -83,6 +83,10 @@ func absURL(dst *url.URL, src *url.URL) bool {
 }
 
 func cachedURL(ctx context.Context, projectID string, url *jsonURL) (*jsonURL, error) {
+	if url.Scheme == "file" {
+		return url, nil
+	}
+
 	userCacheDir, err := os.UserCacheDir()
 	if err != nil {
 		return nil, err
@@ -147,32 +151,28 @@ type configIncludeVersions struct {
 
 // urlConfig represents a configuration include.
 type urlConfig struct {
-	URL      *jsonURL              `json:"url"`
-	GPG      *jsonURL              `json:"gpg"`
-	Cached   *jsonURL              `json:"-"`
-	Versions configIncludeVersions `json:"versions"`
-	Data     map[string]any        `json:"data"`
-	Includes []*urlConfig          `json:"-"`
+	BaseConfig *Config               `json:"-"`
+	URL        *jsonURL              `json:"url"`
+	GPG        *jsonURL              `json:"gpg"`
+	Cached     *jsonURL              `json:"-"`
+	Versions   configIncludeVersions `json:"versions"`
+	Data       map[string]any        `json:"data"`
+	Includes   []*urlConfig          `json:"-"`
+	Repos      []*urlConfig          `json:"-"`
 }
 
-func newURLConfig(url *jsonURL) *urlConfig {
-	return &urlConfig{URL: url}
+func newURLConfig(baseConfig *Config, url *jsonURL) *urlConfig {
+	return &urlConfig{BaseConfig: baseConfig, URL: url}
 }
 
-func (u *urlConfig) Read(ctx context.Context, projectID string, parentURL *jsonURL) error {
-	if parentURL != nil {
-		absURL(u.URL.URL, parentURL.URL)
-	}
+func (u *urlConfig) Read(ctx context.Context) error {
+	slog.Debug("Reading file", "url", u.URL.String())
 
-	if u.URL.Scheme != "file" {
-		cacheURL, err := cachedURL(ctx, projectID, u.URL)
-		if err != nil {
-			return err
-		}
+	var err error
 
-		u.Cached = cacheURL
-	} else {
-		u.Cached = u.URL
+	u.Cached, err = cachedURL(ctx, u.BaseConfig.ProjectID, u.URL)
+	if err != nil {
+		return err
 	}
 
 	if u.Data == nil {
@@ -185,28 +185,65 @@ func (u *urlConfig) Read(ctx context.Context, projectID string, parentURL *jsonU
 	}
 
 	// Parse per config includes
-	err := config.ParseSlice([]string{}, "include", u.Data, &u.Includes)
+	err = config.ParseSlice([]string{}, "include", u.Data, &u.Includes)
 	if err != nil {
 		if !errors.Is(err, config.ErrNotExistent) {
 			return err
 		}
-	} else {
+	}
+
+	mErr := &multierror.Error{}
+
+	if err == nil {
 		delete(u.Data, "include")
 
-		mErr := &multierror.Error{}
-
+		//nolint:dupl
 		for _, include := range u.Includes {
-			if err := include.Read(ctx, projectID, u.URL); err != nil {
+			absURL(include.URL.URL, u.URL.URL)
+
+			if _, ok := u.BaseConfig.KnownURLs[include.URL.String()]; ok {
+				slog.Warn("while reading config '%s': duplicate include '%s'", u.Cached.String(), include.URL.String())
+				continue
+			}
+
+			include.BaseConfig = u.BaseConfig
+			if err := include.Read(ctx); err != nil {
 				mErr = multierror.Append(mErr, err)
 			}
-		}
 
-		if mErr.ErrorOrNil() != nil {
-			return mErr.ErrorOrNil()
+			u.BaseConfig.KnownURLs[include.URL.String()] = struct{}{}
 		}
 	}
 
-	return nil
+	err = config.ParseSlice([]string{"repos"}, "include", u.Data, &u.Repos)
+	if err != nil {
+		if !errors.Is(err, config.ErrNotExistent) {
+			return err
+		}
+	}
+
+	if err == nil {
+		delete(u.Data["repos"].(map[string]any), "include") //nolint:errcheck
+
+		//nolint:dupl
+		for _, repo := range u.Repos {
+			absURL(repo.URL.URL, u.URL.URL)
+
+			if _, ok := u.BaseConfig.KnownURLs[repo.URL.String()]; ok {
+				slog.Warn("while reading config '%s': duplicate repo '%s'", u.Cached.String(), repo.URL.String())
+				continue
+			}
+
+			repo.BaseConfig = u.BaseConfig
+			if err := repo.Read(ctx); err != nil {
+				mErr = multierror.Append(mErr, err)
+			}
+
+			u.BaseConfig.KnownURLs[repo.URL.String()] = struct{}{}
+		}
+	}
+
+	return mErr.ErrorOrNil()
 }
 
 // Flatten returns a sequence iterator that yields the urlConfig and all its includes.
@@ -236,6 +273,8 @@ func (u *urlConfig) Flatten() iter.Seq[*urlConfig] {
 type Config struct {
 	Paths []*urlConfig
 
+	KnownURLs map[string]struct{}
+
 	// Merged data
 	Data map[string]any
 
@@ -243,13 +282,13 @@ type Config struct {
 }
 
 // NewConfig creates a new configuration from the given paths.
-func NewConfig(paths []string) (Config, error) {
-	includePaths := []*urlConfig{}
+func NewConfig(paths []string) (*Config, error) {
+	cfg := &Config{Paths: []*urlConfig{}, KnownURLs: map[string]struct{}{}}
 
 	for _, path := range paths {
 		myURL, err := newJSONURL(path)
 		if err != nil {
-			return Config{}, err
+			return nil, err
 		}
 
 		if myURL.Scheme == "" {
@@ -257,20 +296,24 @@ func NewConfig(paths []string) (Config, error) {
 
 			symPath, err := filepath.EvalSymlinks(myURL.Path)
 			if err != nil {
-				return Config{}, err
+				return nil, err
 			}
 
 			myURL.Path, err = filepath.Abs(symPath)
 
 			if err != nil {
-				return Config{}, err
+				return nil, err
 			}
 		}
 
-		includePaths = append(includePaths, newURLConfig(myURL))
-	}
+		if _, ok := cfg.KnownURLs[myURL.String()]; ok {
+			slog.Warn("duplicate URL", "url", myURL.String())
+			continue
+		}
 
-	cfg := Config{Paths: includePaths}
+		cfg.Paths = append(cfg.Paths, newURLConfig(cfg, myURL))
+		cfg.KnownURLs[myURL.String()] = struct{}{}
+	}
 
 	return cfg, nil
 }
@@ -285,7 +328,7 @@ func (c *Config) Run(ctx context.Context) error {
 		return err
 	}
 
-	if err := c.Merge(); err != nil {
+	if err := c.Merge(ctx); err != nil {
 		return err
 	}
 
@@ -333,7 +376,7 @@ func (c *Config) Read(ctx context.Context) error {
 	mErr := &multierror.Error{}
 
 	for _, path := range c.Paths {
-		if err := path.Read(ctx, c.ProjectID, nil); err != nil {
+		if err := path.Read(ctx); err != nil {
 			mErr = multierror.Append(mErr, err)
 		}
 	}
@@ -342,7 +385,7 @@ func (c *Config) Read(ctx context.Context) error {
 }
 
 // Merge merges the configuration data from all paths.
-func (c *Config) Merge() error {
+func (c *Config) Merge(ctx context.Context) error {
 	// Flatten/gather all paths
 	paths := []*urlConfig{}
 
@@ -364,6 +407,53 @@ func (c *Config) Merge() error {
 		if err := config.Merge(&c.Data, path.Data); err != nil {
 			mErr = multierror.Append(mErr, err)
 		}
+
+		data := map[string]any{}
+
+		if myData, ok := c.Data["repos"].(map[string]any); ok {
+			data = myData
+		}
+
+		for _, repo := range path.Repos {
+			for r := range repo.Flatten() {
+				// Fix repo URLs
+				files := map[string]any{}
+				err := config.ParseMap([]string{}, "files", r.Data, &files)
+
+				if err != nil {
+					if !errors.Is(err, config.ErrNotExistent) {
+						mErr = multierror.Append(mErr, err)
+					}
+				}
+
+				if err == nil {
+					for k, v := range files {
+						if u, ok := v.(map[string]any)["url"]; ok { //nolint:errcheck
+							url, uErr := url.Parse(u.(string)) //nolint:errcheck
+							if uErr != nil {
+								mErr = multierror.Append(mErr, uErr)
+							}
+
+							absURL(url, r.URL.URL)
+							cached, err := cachedURL(ctx, c.ProjectID, &jsonURL{URL: url})
+							if err != nil {
+								mErr = multierror.Append(mErr, err)
+							} else {
+								files[k] = map[string]any{"path": cached.Path}
+							}
+						}
+					}
+
+					r.Data["files"] = files
+				}
+
+				if err := config.Merge(&data, r.Data); err != nil {
+					mErr = multierror.Append(mErr, err)
+				}
+			}
+		}
+
+		c.Data["repos"] = data
 	}
 
 	return mErr.ErrorOrNil()
@@ -399,7 +489,7 @@ func (c *Config) ApplyGlobals() error {
 	for name, _ := range services {
 		servicesSvcConfig := svcConfig{}
 
-		if err := config.ParseMap([]string{"services", name}, "config", c.Data, &servicesSvcConfig); err != nil {
+		if err := config.ParseMap([]string{"services", name, "octocompose"}, "config", c.Data, &servicesSvcConfig); err != nil {
 			continue
 		}
 
