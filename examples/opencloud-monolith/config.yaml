@@ -1,7 +1,7 @@
 projectID: jRganCCBmeSvU6YM5AvLhn
 
 include:
-  - url: ./octocompose-chart/config/core.yaml
+  - url: ./octocompose-chart/config/opencloud.yaml
   - url: ./octocompose-chart/config/traefik.yaml
   - url: ./octocompose-chart/config/posix.yaml
   - url: ./octocompose-chart/config/collabora.yaml

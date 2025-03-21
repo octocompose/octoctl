@@ -1,0 +1,76 @@
+repos:
+  include:
+    - url: ./service/webdav.yaml
+      gpg: ./service/webdav.yaml.asc
+
+  files:
+    opencloud_app_registry:
+      url: ../../files/opencloud/app-registry.yaml
+    opencloud_csp:
+      url: ../../files/opencloud/csp.yaml
+    banned_password_list:
+      url: ../../files/opencloud/banned-password-list.txt
+
+  operators:
+    baremetal:
+      binary:
+        linux_amd64:
+          url: https://github.com/octocompose/operator-baremetal/releases/download/v0.0.1/operator-baremetal-linux-amd64
+          sha256Url: https://github.com/octocompose/operator-baremetal/releases/download/v0.0.1/operator-baremetal-linux-amd64.sha256
+          binary: operator-baremetal
+      source:
+        url: https://github.com/octocompose/operator-baremetal.git
+        ref: refs/tags/v0.0.1
+        buildCmds:
+          - GOOS={{OS}} GOARCH={{ARCH}} make
+        binary: dist/{{OS}}/{{ARCH}}/operator-baremetal
+  tools:
+    check-tcp:
+      baremetal:
+        binary:
+          linux_amd64:
+            url: https://github.com/octocompose/tools/releases/download/v0.0.1/tools-linux-amd64
+            sha256Url: https://github.com/octocompose/tools/releases/download/v0.0.1/tools-linux-amd64.sha256
+            # Binary inside the archive.
+            binary: check-tcp
+        source:
+          repo: https://github.com/octocompose/tools.git
+          ref: refs/tags/v0.0.1
+          buildCmds:
+            - GOOS={{OS}} GOARCH={{ARCH}} make check-tcp
+          binary: dist/{{OS}}/{{ARCH}}/check-tcp
+      docker:
+        registry: docker.io
+        image: octocompose/tools
+        tag: v0.0.1
+        entrypoint: /usr/local/bin/check-tcp
+        build:
+          repo: https://github.com/octocompose/tools.git
+          ref: refs/tags/v0.0.1
+          dockerfile: Dockerfile
+          context: .
+  services:
+    # Each service has it's own entry nats is just a template for many of them.
+    nats:
+      baremetal:
+        binary:
+          linux_amd64:
+            url: https://github.com/demoproject/demoproject/releases/download/v2.0.0/demoproject-nats-2.0.0-linux-amd64
+            sha256Url: https://github.com/demoproject/demoproject/releases/download/v2.0.0/demoproject-nats-2.0.0-linux-amd64.sha256
+            # Binary inside the archive.
+            binary: demoproject-nats
+        source:
+          repo: https://github.com/demoproject/demoproject.git
+          ref: refs/tags/v2.0.0
+          buildCmds:
+            - GOOS={{OS}} GOARCH={{ARCH}} make demoproject-nats
+          binary: dist/{{OS}}/{{ARCH}}/demoproject-nats
+      docker:
+        registry: docker.io
+        image: demoproject/demoproject-nats
+        tag: v2.0.0
+        build:
+          repo: https://github.com/demoproject/demoproject.git
+          ref: refs/tags/v2.0.0
+          dockerfile: services/nats/Dockerfile
+          context: services/nats

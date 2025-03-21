@@ -43,7 +43,7 @@ globals:
 
 repos:
   include:
-    - url: ../repo/core.yaml
+    - url: ../repo/opencloud.yaml
 
 services:
   opencloud:

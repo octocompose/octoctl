@@ -11,10 +11,10 @@ go run ./cmd/octoctl/... config show -c config.yaml
 ### Docker compose
 
 ```
-go run ./cmd/octoctl/... config show -c config.yaml > compose.yaml
+go run ./cmd/octoctl/... config compose -c config.yaml > compose.yaml
 ```
 
-Run `docker compose up` and fix errors, then run it again, until it starts the services.
+Run `docker compose up`
 
 ## Overview
 
