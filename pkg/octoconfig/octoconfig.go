@@ -486,11 +486,6 @@ func (c *Config) mergeRepos(ctx context.Context) error {
 		repoFiles = append(repoFiles, slices.Collect(path.FlattenRepo())...)
 	}
 
-	repoFile := &Repo{}
-	if err := config.Parse(nil, "repos", c.Data, repoFile); err == nil {
-		mergo.Merge(c.Repo, repoFile)
-	}
-
 	slices.Reverse(repoFiles)
 
 	for _, repoFile := range repoFiles {
@@ -500,6 +495,12 @@ func (c *Config) mergeRepos(ctx context.Context) error {
 			mErr = multierror.Append(mErr, err)
 			continue
 		}
+	}
+
+	// Merge the repos from the config file.
+	repoFile := &Repo{}
+	if err := config.Parse(nil, "repos", c.Data, repoFile); err == nil {
+		mergo.Merge(c.Repo, repoFile)
 	}
 
 	data, err := config.ParseStruct(nil, c.Repo)
