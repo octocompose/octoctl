@@ -238,8 +238,25 @@ func main() {
 					return runOperator(ctx, cmd, args)
 				},
 			},
+			// {
+			// 	Name:  "restart",
+			// 	Usage: "Restarts the services.",
+			// 	Flags: []cli.Flag{
+			// 		&cli.BoolFlag{
+			// 			Name: "dry-run",
+			// 		},
+			// 	},
+			// 	Before: createConfig,
+			// 	Action: func(ctx context.Context, cmd *cli.Command) error {
+			// 		args := []string{"--log-level", cmd.String("log-level"), "restart"}
+			// 		if cmd.Bool("dry-run") {
+			// 			args = append(args, "--dry-run")
+			// 		}
+			// 		return runOperator(ctx, cmd, args)
+			// 	},
+			// },
 			{
-				Name:  "log",
+				Name:  "logs",
 				Usage: "Shows logs from services.",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
@@ -250,7 +267,7 @@ func main() {
 				},
 				Before: createConfig,
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					args := []string{"--log-level", cmd.String("log-level"), "log"}
+					args := []string{"--log-level", cmd.String("log-level"), "logs"}
 					if cmd.Bool("follow") {
 						args = append(args, "--follow")
 					}
@@ -276,10 +293,6 @@ func main() {
 				},
 			},
 			{
-				Name:  "check",
-				Usage: "Runs validation checks.",
-			},
-			{
 				Name:  "config",
 				Usage: "Manages the service configurations.",
 				Commands: []*cli.Command{
@@ -302,28 +315,6 @@ func main() {
 						Usage: "Shows differences between configurations.",
 					},
 				},
-			},
-			{
-				Name:  "autostart",
-				Usage: "Manages service autostart settings.",
-				Commands: []*cli.Command{
-					{
-						Name:  "enable",
-						Usage: "Enables autostart for a service.",
-					},
-					{
-						Name:  "disable",
-						Usage: "Disables autostart for a service.",
-					},
-					{
-						Name:  "status",
-						Usage: "Shows the autostart status of all services.",
-					},
-				},
-			},
-			{
-				Name:  "upgrade",
-				Usage: "Upgrades octoctl to the latest version.",
 			},
 		},
 	}
