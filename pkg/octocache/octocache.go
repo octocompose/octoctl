@@ -88,7 +88,7 @@ func checkSha256Sum(filePath, checksumPath string) error {
 	fileHashStr := hex.EncodeToString(fileHash[:])
 
 	// Compare the hashes
-	if strings.EqualFold(fileHashStr, checksumStr) {
+	if !strings.EqualFold(fileHashStr, checksumStr) {
 		return fmt.Errorf("checksum mismatch: expected %s, got %s", checksumStr, fileHashStr)
 	}
 

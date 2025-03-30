@@ -350,6 +350,9 @@ type Config struct {
 
 	KnownURLs map[string]struct{}
 
+	// Hardcoded config
+	HardcodedData map[string]any
+
 	// Merged data.
 	Data map[string]any
 
@@ -357,8 +360,8 @@ type Config struct {
 }
 
 // New creates a new configuration from the given paths.
-func New(logger log.Logger, paths []string) (*Config, error) {
-	cfg := &Config{logger: logger, Paths: []*urlConfig{}, KnownURLs: map[string]struct{}{}, Repo: &Repo{}}
+func New(logger log.Logger, paths []string, hardcodedData map[string]any) (*Config, error) {
+	cfg := &Config{logger: logger, Paths: []*urlConfig{}, KnownURLs: map[string]struct{}{}, Repo: &Repo{}, HardcodedData: hardcodedData}
 
 	for _, path := range paths {
 		myURL, err := config.NewURL(path)
@@ -389,6 +392,8 @@ func New(logger log.Logger, paths []string) (*Config, error) {
 		cfg.Paths = append(cfg.Paths, &urlConfig{URL: myURL})
 		cfg.KnownURLs[myURL.String()] = struct{}{}
 	}
+
+	cfg.HardcodedData = hardcodedData
 
 	return cfg, nil
 }
@@ -481,6 +486,11 @@ func (c *Config) mergeRepos(ctx context.Context) error {
 		repoFiles = append(repoFiles, slices.Collect(path.FlattenRepo())...)
 	}
 
+	repoFile := &Repo{}
+	if err := config.Parse(nil, "repos", c.Data, repoFile); err == nil {
+		mergo.Merge(c.Repo, repoFile)
+	}
+
 	slices.Reverse(repoFiles)
 
 	for _, repoFile := range repoFiles {
@@ -529,6 +539,11 @@ func (c *Config) merge(_ context.Context) error {
 	configs := c.collectConfigs()
 
 	var mErr *multierror.Error
+
+	// Merge hardcoded data first.
+	if err := config.Merge(&c.Data, c.HardcodedData); err != nil {
+		mErr = multierror.Append(mErr, err)
+	}
 
 	for _, cfg := range configs {
 		// Log that we're merging this config.

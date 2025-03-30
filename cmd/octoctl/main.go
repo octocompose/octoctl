@@ -47,7 +47,19 @@ func createConfig(ctx context.Context, cmd *cli.Command) (context.Context, error
 
 	logger.Debug("Creating configuration", "config", cmd.StringSlice("config"))
 
-	cfg, err := octoconfig.New(logger, cmd.StringSlice("config"))
+	codec, err := codecs.GetMime(codecs.MimeYAML)
+	if err != nil {
+		logger.Error("Error while getting codec", "error", err)
+		return ctx, err
+	}
+
+	hardCodedData := map[string]any{}
+	if err := codec.Unmarshal([]byte(hardcodedConfig), &hardCodedData); err != nil {
+		logger.Error("Error while marshaling configuration", "error", err)
+		return ctx, err
+	}
+
+	cfg, err := octoconfig.New(logger, cmd.StringSlice("config"), hardCodedData)
 	if err != nil {
 		logger.Error("Error while creating configuration", "error", err)
 		return ctx, err
@@ -119,6 +131,11 @@ func runOperator(ctx context.Context, cmd *cli.Command, args []string) error {
 			return fmt.Errorf("while getting cached URL: %w", err)
 		}
 
+		if err := os.Chmod(url.Path, 0o700); err != nil {
+			logger.Error("Error while chmoding cached operator", "error", err)
+			return fmt.Errorf("while chmoding cached operator: %w", err)
+		}
+
 		logger.Debug("Using cached operator", "url", binary.URL, "cached", url.Path)
 		execPath = url.Path
 	}
@@ -148,6 +165,8 @@ func runOperator(ctx context.Context, cmd *cli.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	logger.Debug("Running operator", "path", execPath, "args", args)
 
 	execCmd := exec.CommandContext(ctx, execPath, args...) //nolint:gosec
 	execCmd.Stdin = bytes.NewReader(b)
