@@ -11,7 +11,7 @@ before:
     - go generate ./...
 
 builds:
-  - main: ./cmd/operator-docker
+  - main: ./cmd/octoctl
     env:
       - CGO_ENABLED=0
     goos:
