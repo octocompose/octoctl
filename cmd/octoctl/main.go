@@ -2,13 +2,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/go-orb/go-orb/codecs"
 	"github.com/go-orb/go-orb/log"
+	"github.com/octocompose/octoctl/pkg/octocache"
 	"github.com/octocompose/octoctl/pkg/octoconfig"
 
 	"github.com/urfave/cli/v3"
@@ -28,6 +33,7 @@ import (
 var Version = versioninfo.Short()
 
 type configKey struct{}
+type loggerKey struct{}
 
 func createConfig(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 	logger, err := log.New(log.WithLevel(cmd.String("log-level")))
@@ -43,29 +49,35 @@ func createConfig(ctx context.Context, cmd *cli.Command) (context.Context, error
 
 	cfg, err := octoconfig.New(logger, cmd.StringSlice("config"))
 	if err != nil {
+		logger.Error("Error while creating configuration", "error", err)
 		return ctx, err
 	}
 
 	if err := cfg.Run(cfgCtx); err != nil {
+		logger.Error("Error while running configuration", "error", err)
 		return ctx, err
 	}
 
 	ctx = context.WithValue(ctx, configKey{}, cfg)
+	ctx = context.WithValue(ctx, loggerKey{}, logger)
 
 	return ctx, nil
 }
 
 func configShow(ctx context.Context, cmd *cli.Command) error {
 	cfg := ctx.Value(configKey{}).(*octoconfig.Config) //nolint:errcheck
+	logger := ctx.Value(loggerKey{}).(log.Logger)      //nolint:errcheck
 
 	codec, ok := codecs.Plugins.Get(cmd.String("format"))
 	if !ok {
+		logger.Error("Unknown format", "format", cmd.String("format"))
 		return fmt.Errorf("unknown format: %s", cmd.String("format"))
 	}
 
 	b, err := codec.Marshal(cfg.Data)
 	if err != nil {
-		return err
+		logger.Error("Error while marshaling configuration", "error", err)
+		return fmt.Errorf("while marshaling configuration: %w", err)
 	}
 
 	//nolint:forbidigo
@@ -74,40 +86,77 @@ func configShow(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func createComposse(ctx context.Context, cmd *cli.Command) error {
+func runOperator(ctx context.Context, cmd *cli.Command, args []string) error {
 	cfg := ctx.Value(configKey{}).(*octoconfig.Config) //nolint:errcheck
+	logger := ctx.Value(loggerKey{}).(log.Logger)      //nolint:errcheck
 
-	data := cfg.Data
+	forceBuild := cmd.Bool("force-build-operator")
 
-	delete(data, "configs")
-	delete(data, "octoctl")
-	delete(data, "repos")
+	if cfg.Octoctl.Operator == "" {
+		return errors.New("operator not specified")
+	}
 
-	projectID := data["projectID"].(string)
-	delete(data, "projectID")
-	data["name"] = projectID
-
-	services, ok := data["services"].(map[string]any)
+	operatorRepo, ok := cfg.Repo.Operators[cfg.Octoctl.Operator]
 	if !ok {
-		return fmt.Errorf("services not found")
+		logger.Error("Operator not found", "operator", cfg.Octoctl.Operator)
+		return fmt.Errorf("operator '%s' not found", cfg.Octoctl.Operator)
 	}
 
-	for name := range services {
-		delete(services[name].(map[string]any), "octocompose")
+	osArch := fmt.Sprintf("%s_%s", runtime.GOOS, runtime.GOARCH)
+
+	binary, ok := operatorRepo.Binary[osArch]
+	if !ok && operatorRepo.Source == nil {
+		logger.Error("Operator not available for architecture", "operator", cfg.Octoctl.Operator, "osArch", osArch)
+		return fmt.Errorf("operator '%s' not available for %s", cfg.Octoctl.Operator, osArch)
 	}
 
-	codec, err := codecs.GetMime(codecs.MimeYAML)
+	var execPath string
+
+	if ok && !forceBuild {
+		url, err := octocache.CachedURL(ctx, cfg.ProjectID, binary.URL, binary.SHA256URL, "operators", false)
+		if err != nil {
+			logger.Error("Error while getting cached URL", "error", err)
+			return fmt.Errorf("while getting cached URL: %w", err)
+		}
+
+		logger.Debug("Using cached operator", "url", binary.URL, "cached", url.Path)
+		execPath = url.Path
+	}
+
+	if execPath == "" && operatorRepo.Source != nil {
+
+		path, err := build(ctx, logger, cfg, operatorRepo.Source, forceBuild)
+		if err != nil {
+			return err
+		}
+
+		logger.Debug("Using git operator", "url", operatorRepo.Source.Repo, "path", path)
+		execPath = path
+	}
+
+	if execPath == "" {
+		logger.Error("Operator not available for architecture", "operator", cfg.Octoctl.Operator, "osArch", osArch)
+		return fmt.Errorf("operator '%s' not available for %s", cfg.Octoctl.Operator, osArch)
+	}
+
+	codec, err := codecs.GetMime(codecs.MimeJSON)
 	if err != nil {
 		return err
 	}
 
-	b, err := codec.Marshal(data)
+	b, err := codec.Marshal(cfg.Data)
 	if err != nil {
 		return err
 	}
 
-	//nolint:forbidigo
-	fmt.Println(string(b))
+	execCmd := exec.CommandContext(ctx, execPath, args...) //nolint:gosec
+	execCmd.Stdin = bytes.NewReader(b)
+	execCmd.Stdout = os.Stdout
+	execCmd.Stderr = os.Stderr
+
+	if err := execCmd.Run(); err != nil {
+		os.Exit(execCmd.ProcessState.ExitCode())
+	}
 
 	return nil
 }
@@ -130,8 +179,83 @@ func main() {
 				Usage:    "Path to configuration files",
 				Required: true,
 			},
+			&cli.BoolFlag{
+				Name:  "force-build-operator",
+				Usage: "Force build the operator.",
+			},
 		},
 		Commands: []*cli.Command{
+			{
+				Name:  "start",
+				Usage: "Starts the services.",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name: "dry-run",
+					},
+				},
+				Before: createConfig,
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					args := []string{"--log-level", cmd.String("log-level"), "start"}
+					if cmd.Bool("dry-run") {
+						args = append(args, "--dry-run")
+					}
+					return runOperator(ctx, cmd, args)
+				},
+			},
+			{
+				Name:  "stop",
+				Usage: "Stops the services.",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name: "dry-run",
+					},
+				},
+				Before: createConfig,
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					args := []string{"--log-level", cmd.String("log-level"), "stop"}
+					if cmd.Bool("dry-run") {
+						args = append(args, "--dry-run")
+					}
+					return runOperator(ctx, cmd, args)
+				},
+			},
+			{
+				Name:  "log",
+				Usage: "Shows logs from services.",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "follow",
+						Aliases: []string{"f"},
+						Usage:   "Follow the logs.",
+					},
+				},
+				Before: createConfig,
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					args := []string{"--log-level", cmd.String("log-level"), "log"}
+					if cmd.Bool("follow") {
+						args = append(args, "--follow")
+					}
+					return runOperator(ctx, cmd, args)
+				},
+			},
+			{
+				Name:   "status",
+				Usage:  "Shows status of services.",
+				Before: createConfig,
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					args := []string{"--log-level", cmd.String("log-level"), "status"}
+					return runOperator(ctx, cmd, args)
+				},
+			},
+			{
+				Name:   "show",
+				Usage:  "Shows the running configuration.",
+				Before: createConfig,
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					args := []string{"--log-level", cmd.String("log-level"), "show"}
+					return runOperator(ctx, cmd, args)
+				},
+			},
 			{
 				Name:  "check",
 				Usage: "Runs validation checks.",
@@ -157,12 +281,6 @@ func main() {
 					{
 						Name:  "diff",
 						Usage: "Shows differences between configurations.",
-					},
-					{
-						Name: "compose",
-						Usage: "Creates a Docker Compose file.",
-						Before: createConfig,
-						Action: createComposse,
 					},
 				},
 			},
@@ -192,7 +310,6 @@ func main() {
 	}
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
-		log.Error("Error while running the command", "error", err)
 		os.Exit(1)
 	}
 }

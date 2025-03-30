@@ -5,78 +5,43 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"iter"
 	"log/slog"
-	"net/http"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strings"
 	"text/template"
 
 	"dario.cat/mergo"
 	"github.com/go-orb/go-orb/codecs"
 	"github.com/go-orb/go-orb/config"
 	"github.com/go-orb/go-orb/log"
+	"github.com/octocompose/octoctl/pkg/octocache"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/lithammer/shortuuid/v3"
 )
 
+const schemeFile = "file"
+
 const gpgAsc = ".asc"
 
-// downloadFile downloads a file from a URL to a local path.
-func downloadFile(ctx context.Context, filepath string, myURL *url.URL) (err error) {
-	// Create the file.
-	out, err := os.Create(filepath) //nolint:gosec
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if err := out.Close(); err != nil {
-			slog.Error("Error while closing the file", "file", filepath, "error", err)
-		}
-	}()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, myURL.String(), nil)
-	if err != nil {
-		return err
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			slog.Error("Error while closing the body", "url", myURL.String(), "error", err)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-			slog.Error("Error while closing the body", "url", myURL.String(), "error", err)
-		}
-
-		return fmt.Errorf("bad response status code '%d', status text: %s", resp.StatusCode, resp.Status)
-	}
-
-	// Write the file.
-	_, err = io.Copy(out, resp.Body)
-	if err != nil {
-		return err
-	}
-
-	return nil
+// OctoctlConfig represents the `octoctl` structure of the octoctl config file.
+type OctoctlConfig struct {
+	Operator string   `json:"operator"`
+	Command  []string `json:"command,omitempty"`
 }
 
-// absURL makes the URL absolute if it is relative.
-func absURL(dst *url.URL, src *url.URL) {
+// AbsURL makes the URL absolute if it is relative.
+func AbsURL(dst *url.URL, src *url.URL) {
 	if !filepath.IsAbs(dst.Path) {
 		dst.Scheme = src.Scheme
 		dst.Host = src.Host
@@ -85,53 +50,95 @@ func absURL(dst *url.URL, src *url.URL) {
 	}
 }
 
-// cachedURL returns a cached version of the given URL.
-func cachedURL(ctx context.Context, projectID string, url *JURL, cacheType string) (*JURL, error) {
-	if url.Scheme == "file" {
-		return url, nil
-	}
-
-	userCacheDir, err := os.UserCacheDir()
-	if err != nil {
-		return nil, err
+func templateFile(url *config.URL, projectID string, templateVars map[string]any) (*config.URL, error) {
+	if url.Scheme != schemeFile {
+		return nil, fmt.Errorf("while templating file '%s': only 'file' URLs are supported", url.String())
 	}
 
 	sha256sum := sha256.Sum256([]byte(url.URL.String()))
 	ext := filepath.Ext(url.URL.Path)
 
-	cachedPath := filepath.Join(userCacheDir, "octoctl", projectID, cacheType, string(sha256sum[:])+ext)
-	if err := os.MkdirAll(filepath.Dir(cachedPath), 0700); err != nil {
-		return nil, fmt.Errorf("while creating the cache directory '%s': %w", filepath.Dir(cachedPath), err)
+	templatePath, err := octocache.Path(projectID, "template", hex.EncodeToString(sha256sum[:16])+ext)
+	if err != nil {
+		return nil, err
 	}
 
-	// Check and return if the file already exists.
-	if _, err := os.Stat(cachedPath); err == nil {
-		return NewJURL(cachedPath)
+	// Remove existing file.
+	if _, err := os.Stat(templatePath); err == nil {
+		if err := os.Remove(templatePath); err != nil {
+			return nil, fmt.Errorf("while removing file '%s': %w", templatePath, err)
+		}
 	}
 
-	if err := downloadFile(ctx, cachedPath, url.URL); err != nil {
-		return nil, fmt.Errorf("while downloading config '%s': %w", url.URL.String(), err)
+	// Read the file.
+	fpRead, err := os.Open(url.URL.Path)
+	if err != nil {
+		return nil, fmt.Errorf("while opening file '%s': %w", url.URL.String(), err)
 	}
 
-	return NewJURL(cachedPath)
+	defer func() {
+		if err := fpRead.Close(); err != nil {
+			slog.Error("failed to close template file", "path", url.URL.String(), "error", err)
+		}
+	}()
+
+	b, err := io.ReadAll(fpRead)
+	if err != nil {
+		return nil, fmt.Errorf("while reading file '%s': %w", url.URL.String(), err)
+	}
+
+	// Write the file.
+	fpWrite, err := os.OpenFile(templatePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) //nolint:gosec
+	if err != nil {
+		return nil, fmt.Errorf("while opening file '%s': %w", templatePath, err)
+	}
+
+	defer func() {
+		if err := fpWrite.Close(); err != nil {
+			slog.Error("failed to close template file", "path", templatePath, "error", err)
+		}
+	}()
+
+	t, err := template.New("template").Parse(string(b))
+	if err != nil {
+		return nil, fmt.Errorf("while parsing template: %w", err)
+	}
+
+	buf := &bytes.Buffer{}
+	if err := t.Execute(buf, templateVars); err != nil {
+		return nil, fmt.Errorf("while executing template: %w", err)
+	}
+
+	if _, err := fpWrite.Write(buf.Bytes()); err != nil {
+		return nil, fmt.Errorf("while writing file '%s': %w", templatePath, err)
+	}
+
+	result, err := config.NewURL(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("while creating URL '%s': %w", templatePath, err)
+	}
+
+	result.Scheme = schemeFile
+
+	return result, nil
 }
 
 // configIncludeVersions represents the versions of a configuration include.
 type configIncludeVersions struct {
-	Format string `json:"format"`
-	URL    *JURL  `json:"url"`
+	Format string      `json:"format"`
+	URL    *config.URL `json:"url"`
 }
 
 // urlConfig represents a configuration include.
 type urlConfig struct {
-	URL      *JURL                 `json:"url"`
-	GPG      *JURL                 `json:"gpg"`
+	URL      *config.URL           `json:"url"`
+	GPG      *config.URL           `json:"gpg"`
 	Versions configIncludeVersions `json:"versions"`
 
-	Cached   *JURL          `json:"-"`
+	Cached   *config.URL    `json:"-"`
 	Data     map[string]any `json:"-"`
 	Includes []*urlConfig   `json:"-"`
-	Repo     *RepoFile      `json:"-"`
+	Repo     *Repo          `json:"-"`
 }
 
 // Flatten returns a sequence iterator that yields the urlConfig and all its includes.
@@ -152,8 +159,8 @@ func (u *urlConfig) Flatten() iter.Seq[*urlConfig] {
 }
 
 // FlattenRepo returns a sequence iterator that yields the *RepoFile and all its children.
-func (u *urlConfig) FlattenRepo() iter.Seq[*RepoFile] {
-	return iter.Seq[*RepoFile](func(yield func(*RepoFile) bool) {
+func (u *urlConfig) FlattenRepo() iter.Seq[*Repo] {
+	return iter.Seq[*Repo](func(yield func(*Repo) bool) {
 		for uConfig := range u.Flatten() {
 			for child := range uConfig.Repo.Flatten() {
 				if !yield(child) {
@@ -169,11 +176,11 @@ func (u *urlConfig) String() string {
 }
 
 // readRepo reads a repository configuration file.
-func (c *Config) readRepo(ctx context.Context, url *JURL, parent *RepoFile) error {
-	c.logger.Debug("Read repository", "url", url.String())
+func (c *Config) readRepo(ctx context.Context, url *config.URL, parent *Repo) error {
+	c.logger.Trace("Read repository", "url", url.String())
 
 	// Resolve the URL.
-	cached, err := cachedURL(ctx, c.ProjectID, url, "repos")
+	cached, err := octocache.CachedURL(ctx, c.ProjectID, url, nil, "repos", true)
 	if err != nil {
 		return err
 	}
@@ -184,7 +191,7 @@ func (c *Config) readRepo(ctx context.Context, url *JURL, parent *RepoFile) erro
 		return err
 	}
 
-	tmpRepo := &RepoFile{}
+	tmpRepo := &Repo{}
 	tmpRepo.URL = url
 
 	if err := config.Parse(nil, "", data, tmpRepo); err != nil {
@@ -195,10 +202,10 @@ func (c *Config) readRepo(ctx context.Context, url *JURL, parent *RepoFile) erro
 
 	for _, include := range tmpRepo.Include {
 		// Make the URL absolute if it's a relative URL.
-		absURL(include.URL.URL, url.URL)
+		AbsURL(include.URL.URL, url.URL)
 
 		if include.GPG != nil {
-			absURL(include.GPG.URL, url.URL)
+			AbsURL(include.GPG.URL, url.URL)
 		} else {
 			gpg, err := include.URL.Copy()
 			if err != nil {
@@ -224,10 +231,10 @@ func (c *Config) processFileRepo(ctx context.Context, fileConfig *urlConfig) err
 
 	for _, repo := range fileConfig.Repo.Include {
 		// Make the URL absolute if it's a relative URL.
-		absURL(repo.URL.URL, fileConfig.URL.URL)
+		AbsURL(repo.URL.URL, fileConfig.URL.URL)
 
 		if repo.GPG != nil {
-			absURL(repo.GPG.URL, fileConfig.URL.URL)
+			AbsURL(repo.GPG.URL, fileConfig.URL.URL)
 		} else {
 			gpg, err := repo.URL.Copy()
 			if err != nil {
@@ -251,15 +258,17 @@ func (c *Config) processFileRepo(ctx context.Context, fileConfig *urlConfig) err
 	return mErr.ErrorOrNil()
 }
 
-// ReadURL reads the configuration data from a urlConfig's URL.
-func (c *Config) ReadURL(ctx context.Context, fileConfig *urlConfig) error {
+// readURL reads the configuration data from a urlConfig's URL.
+func (c *Config) readURL(ctx context.Context, fileConfig *urlConfig) error {
 	mErr := &multierror.Error{}
 
 	// Resolve the URL.
-	cached, err := cachedURL(ctx, c.ProjectID, fileConfig.URL, "configs")
+	cached, err := octocache.CachedURL(ctx, c.ProjectID, fileConfig.URL, nil, "configs", true)
 	if err != nil {
 		return err
 	}
+
+	c.logger.Trace("Read file", "original", fileConfig.URL.String(), "cached", cached.URL.String())
 
 	// Read the cached file.
 	data, err := config.Read(cached.URL)
@@ -270,7 +279,7 @@ func (c *Config) ReadURL(ctx context.Context, fileConfig *urlConfig) error {
 	fileConfig.Cached = cached
 	fileConfig.Data = data
 
-	fileConfig.Repo = &RepoFile{}
+	fileConfig.Repo = &Repo{}
 	fileConfig.Repo.URL = fileConfig.URL
 
 	err = config.Parse(nil, "repos", fileConfig.Data, fileConfig.Repo)
@@ -304,10 +313,10 @@ func (c *Config) ReadURL(ctx context.Context, fileConfig *urlConfig) error {
 	// Iterate over the include paths and create URLConfigs for them.
 	for _, include := range includes {
 		// Make the URL absolute if it's a relative URL.
-		absURL(include.URL.URL, fileConfig.URL.URL)
+		AbsURL(include.URL.URL, fileConfig.URL.URL)
 
 		if include.GPG != nil {
-			absURL(include.GPG.URL, fileConfig.URL.URL)
+			AbsURL(include.GPG.URL, fileConfig.URL.URL)
 		} else {
 			gpg, err := include.URL.Copy()
 			if err != nil {
@@ -323,7 +332,7 @@ func (c *Config) ReadURL(ctx context.Context, fileConfig *urlConfig) error {
 		fileConfig.Includes = append(fileConfig.Includes, include)
 
 		// Read the include.
-		if err := c.ReadURL(ctx, include); err != nil {
+		if err := c.readURL(ctx, include); err != nil {
 			mErr = multierror.Append(mErr, err)
 		}
 	}
@@ -335,8 +344,9 @@ func (c *Config) ReadURL(ctx context.Context, fileConfig *urlConfig) error {
 type Config struct {
 	logger log.Logger
 
-	Paths []*urlConfig
-	Repos *RepoFile
+	Paths   []*urlConfig
+	Repo    *Repo
+	Octoctl *OctoctlConfig
 
 	KnownURLs map[string]struct{}
 
@@ -348,16 +358,16 @@ type Config struct {
 
 // New creates a new configuration from the given paths.
 func New(logger log.Logger, paths []string) (*Config, error) {
-	cfg := &Config{logger: logger, Paths: []*urlConfig{}, KnownURLs: map[string]struct{}{}, Repos: &RepoFile{}}
+	cfg := &Config{logger: logger, Paths: []*urlConfig{}, KnownURLs: map[string]struct{}{}, Repo: &Repo{}}
 
 	for _, path := range paths {
-		myURL, err := NewJURL(path)
+		myURL, err := config.NewURL(path)
 		if err != nil {
 			return nil, err
 		}
 
 		if myURL.Scheme == "" {
-			myURL.Scheme = "file"
+			myURL.Scheme = schemeFile
 
 			symPath, err := filepath.EvalSymlinks(myURL.Path)
 			if err != nil {
@@ -385,35 +395,39 @@ func New(logger log.Logger, paths []string) (*Config, error) {
 
 // Run runs the configuration.
 func (c *Config) Run(ctx context.Context) error {
-	if err := c.EnsureProjectID(ctx); err != nil {
+	if err := c.ensureProjectID(ctx); err != nil {
 		return err
 	}
 
-	if err := c.Read(ctx); err != nil {
+	if err := c.read(ctx); err != nil {
 		return err
 	}
 
-	if err := c.MergeRepos(ctx); err != nil {
+	if err := c.merge(ctx); err != nil {
 		return err
 	}
 
-	if err := c.Merge(ctx); err != nil {
+	if err := c.applyGlobals(); err != nil {
 		return err
 	}
 
-	if err := c.ApplyGlobals(); err != nil {
+	if err := c.processFileTemplates(ctx); err != nil {
 		return err
 	}
 
-	if err := c.ApplyServiceTemplates(); err != nil {
+	if err := c.mergeRepos(ctx); err != nil {
+		return err
+	}
+
+	if err := c.applyServiceTemplates(); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// EnsureProjectID ensures that the projectID is set in the configuration.
-func (c *Config) EnsureProjectID(_ context.Context) error {
+// ensureProjectID ensures that the projectID is set in the configuration.
+func (c *Config) ensureProjectID(_ context.Context) error {
 	for _, cfg := range c.Paths {
 		data, err := config.Read(cfg.URL.URL)
 		if err != nil {
@@ -421,7 +435,7 @@ func (c *Config) EnsureProjectID(_ context.Context) error {
 			continue
 		}
 
-		projectID, ok := data["projectID"]
+		projectID, ok := data["name"]
 		if !ok {
 			continue
 		}
@@ -431,7 +445,7 @@ func (c *Config) EnsureProjectID(_ context.Context) error {
 			continue
 		}
 
-		c.logger.Debug("Using project ID from config", "projectID", c.ProjectID)
+		c.logger.Debug("Using name from config", "name", c.ProjectID)
 
 		return nil
 	}
@@ -439,18 +453,18 @@ func (c *Config) EnsureProjectID(_ context.Context) error {
 	if c.ProjectID == "" {
 		// Generate a projectID if none was found.
 		c.ProjectID = shortuuid.New()
-		c.logger.Debug("Generated new project ID", "projectID", c.ProjectID)
+		c.logger.Debug("Generated a new name", "name", c.ProjectID)
 	}
 
 	return nil
 }
 
-// Read reads the configuration data from all paths.
-func (c *Config) Read(ctx context.Context) error {
+// read reads the configuration data from all paths.
+func (c *Config) read(ctx context.Context) error {
 	mErr := &multierror.Error{}
 
 	for _, path := range c.Paths {
-		if err := c.ReadURL(ctx, path); err != nil {
+		if err := c.readURL(ctx, path); err != nil {
 			mErr = multierror.Append(mErr, err)
 		}
 	}
@@ -458,11 +472,11 @@ func (c *Config) Read(ctx context.Context) error {
 	return mErr.ErrorOrNil()
 }
 
-// MergeRepos reads and merges repos from the config(s).
-func (c *Config) MergeRepos(ctx context.Context) error {
+// mergeRepos reads and merges repos from the config(s).
+func (c *Config) mergeRepos(ctx context.Context) error {
 	mErr := &multierror.Error{}
 
-	repoFiles := []*RepoFile{}
+	repoFiles := []*Repo{}
 	for _, path := range c.Paths {
 		repoFiles = append(repoFiles, slices.Collect(path.FlattenRepo())...)
 	}
@@ -472,18 +486,13 @@ func (c *Config) MergeRepos(ctx context.Context) error {
 	for _, repoFile := range repoFiles {
 		repoFile.Include = nil
 
-		if err := c.processRepoFileURLs(ctx, repoFile); err != nil {
-			mErr = multierror.Append(mErr, err)
-			continue
-		}
-
-		if err := mergo.Merge(c.Repos, repoFile); err != nil {
+		if err := mergo.Merge(c.Repo, repoFile); err != nil {
 			mErr = multierror.Append(mErr, err)
 			continue
 		}
 	}
 
-	data, err := config.ParseStruct(nil, c.Repos)
+	data, err := config.ParseStruct(nil, c.Repo)
 
 	if err != nil {
 		mErr = multierror.Append(mErr, err)
@@ -514,8 +523,8 @@ func (c *Config) collectConfigs() []*urlConfig {
 	return configs
 }
 
-// Merge merges the configuration data from all paths.
-func (c *Config) Merge(_ context.Context) error {
+// merge merges the configuration data from all paths.
+func (c *Config) merge(_ context.Context) error {
 	// Collect configurations in the correct order for merging.
 	configs := c.collectConfigs()
 
@@ -523,11 +532,17 @@ func (c *Config) Merge(_ context.Context) error {
 
 	for _, cfg := range configs {
 		// Log that we're merging this config.
-		c.logger.Debug("Merging config", "path", cfg.URL.String())
+		c.logger.Trace("Merging config", "url", cfg.URL.String())
 
 		if err := config.Merge(&c.Data, cfg.Data); err != nil {
 			mErr = multierror.Append(mErr, err)
 		}
+	}
+
+	// Load octoctl config.
+	c.Octoctl = &OctoctlConfig{}
+	if err := config.Parse([]string{}, "octoctl", c.Data, c.Octoctl); err != nil {
+		mErr = multierror.Append(mErr, err)
 	}
 
 	return mErr.ErrorOrNil()
@@ -539,8 +554,8 @@ type svcConfig struct {
 	NoTemplate bool   `json:"noTemplate"`
 }
 
-// ApplyGlobals applies the global configuration to each service.
-func (c *Config) ApplyGlobals() error {
+// applyGlobals applies the global configuration to each service.
+func (c *Config) applyGlobals() error {
 	services := map[string]any{}
 
 	if err := config.Parse([]string{}, "services", c.Data, &services); err != nil {
@@ -618,8 +633,32 @@ func (c *Config) ApplyGlobals() error {
 	return nil
 }
 
-// ApplyServiceTemplates applies the service templates.
-func (c *Config) ApplyServiceTemplates() error {
+// TemplateVars returns the template variables.
+func (c *Config) TemplateVars() map[string]any {
+	data := maps.Clone(c.Data)
+
+	// Add project ID.
+	data["projectID"] = c.ProjectID
+
+	// Add OS and ARCH variables.
+	data["OS"] = runtime.GOOS
+	data["ARCH"] = runtime.GOARCH
+
+	// Add environment variables.
+	envData := map[string]any{}
+
+	for _, env := range os.Environ() {
+		split := strings.SplitN(env, "=", 2)
+		envData[split[0]] = split[1]
+	}
+
+	data["env"] = envData
+
+	return data
+}
+
+// applyServiceTemplates applies the service templates.
+func (c *Config) applyServiceTemplates() error {
 	var services map[string]any
 
 	if err := config.Parse([]string{}, "services", c.Data, &services); err != nil {
@@ -630,29 +669,31 @@ func (c *Config) ApplyServiceTemplates() error {
 		return fmt.Errorf("while parsing services: %w", err)
 	}
 
-	jsonCodec, err := codecs.GetMime(codecs.MimeJSON)
+	yamlCodec, err := codecs.GetMime(codecs.MimeYAML)
 	if err != nil {
-		return fmt.Errorf("while getting JSON codec: %w", err)
+		return fmt.Errorf("while getting YAML codec: %w", err)
 	}
 
+	templateVars := c.TemplateVars()
+
 	for name, svc := range services {
-		jsonB, err := jsonCodec.Marshal(svc)
+		yamlB, err := yamlCodec.Marshal(svc)
 		if err != nil {
 			return fmt.Errorf("while marshaling service %s: %w", name, err)
 		}
 
-		t, err := template.New(name).Parse(string(jsonB))
+		t, err := template.New(name).Parse(string(yamlB))
 		if err != nil {
 			return fmt.Errorf("while parsing template for service %s: %w", name, err)
 		}
 
 		buf := &bytes.Buffer{}
-		if err := t.Execute(buf, c.Data); err != nil {
+		if err := t.Execute(buf, templateVars); err != nil {
 			return fmt.Errorf("while executing template for service %s: %w", name, err)
 		}
 
 		newSvc := map[string]any{}
-		if err := jsonCodec.Unmarshal(buf.Bytes(), &newSvc); err != nil {
+		if err := yamlCodec.Unmarshal(buf.Bytes(), &newSvc); err != nil {
 			return fmt.Errorf("while unmarshalling service %s: %w", name, err)
 		}
 
@@ -662,25 +703,60 @@ func (c *Config) ApplyServiceTemplates() error {
 	return nil
 }
 
-// processRepoFileURLs processes URLs in files and makes them absolute.
-func (c *Config) processRepoFileURLs(ctx context.Context, repo *RepoFile) error {
+// processFileTemplates processes templates in files.
+func (c *Config) processFileTemplates(ctx context.Context) error {
 	mErr := &multierror.Error{}
 
-	for fileName, fileValue := range repo.Files {
-		if fileValue.URL == nil {
-			continue
+	templateVars := c.TemplateVars()
+
+	repoFiles := []*Repo{}
+	for _, path := range c.Paths {
+		repoFiles = append(repoFiles, slices.Collect(path.FlattenRepo())...)
+	}
+
+	slices.Reverse(repoFiles)
+
+	for _, repo := range repoFiles {
+		for name, operator := range repo.Operators {
+			if operator.Source.Path != nil {
+				AbsURL(operator.Source.Path.URL, repo.URL.URL)
+			}
+
+			repo.Operators[name] = operator
 		}
 
-		absURL(fileValue.URL.URL, repo.URL.URL)
+		for fileName, fileValue := range repo.Files {
+			if fileValue.URL == nil {
+				continue
+			}
 
-		cached, err := cachedURL(ctx, c.ProjectID, fileValue.URL, "files")
-		if err != nil {
-			mErr = multierror.Append(mErr, err)
-			continue
+			AbsURL(fileValue.URL.URL, repo.URL.URL)
+
+			cached, err := octocache.CachedURL(ctx, c.ProjectID, fileValue.URL, nil, "files", true)
+			if err != nil {
+				mErr = multierror.Append(mErr, err)
+				continue
+			}
+
+			fileValue.URL = cached
+			fileValue.URL.Scheme = "file"
+			repo.Files[fileName] = fileValue
+
+			if !fileValue.Template {
+				fileValue.Path = cached.URL.Path
+				repo.Files[fileName] = fileValue
+				continue
+			}
+
+			templateURL, err := templateFile(fileValue.URL, c.ProjectID, templateVars)
+			if err != nil {
+				mErr = multierror.Append(mErr, err)
+				continue
+			}
+
+			fileValue.Path = templateURL.Path
+			repo.Files[fileName] = fileValue
 		}
-
-		fileValue.Path = cached.Path
-		repo.Files[fileName] = fileValue
 	}
 
 	return mErr.ErrorOrNil()

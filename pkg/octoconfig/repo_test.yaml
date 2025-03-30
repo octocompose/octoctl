@@ -8,6 +8,7 @@ repos:
       url: ../../files/opencloud/app-registry.yaml
     opencloud_csp:
       url: ../../files/opencloud/csp.yaml
+      template: true
     banned_password_list:
       url: ../../files/opencloud/banned-password-list.txt
 
@@ -19,11 +20,13 @@ repos:
           sha256Url: https://github.com/octocompose/operator-baremetal/releases/download/v0.0.1/operator-baremetal-linux-amd64.sha256
           binary: operator-baremetal
       source:
-        url: https://github.com/octocompose/operator-baremetal.git
+        # Optionally use this if specified and existing.
+        path: ../
+        repo: https://github.com/octocompose/operator-baremetal.git
         ref: refs/tags/v0.0.1
         buildCmds:
-          - GOOS={{OS}} GOARCH={{ARCH}} make
-        binary: dist/{{OS}}/{{ARCH}}/operator-baremetal
+          - GOOS={{.OS}} GOARCH={{.ARCH}} make
+        binary: dist/{{.OS}}/{{.ARCH}}/operator-baremetal
   tools:
     check-tcp:
       baremetal:
@@ -31,14 +34,14 @@ repos:
           linux_amd64:
             url: https://github.com/octocompose/tools/releases/download/v0.0.1/tools-linux-amd64
             sha256Url: https://github.com/octocompose/tools/releases/download/v0.0.1/tools-linux-amd64.sha256
-            # Binary inside the archive.
+            # Binary inside the archive, leave out if not an archive.
             binary: check-tcp
         source:
           repo: https://github.com/octocompose/tools.git
           ref: refs/tags/v0.0.1
           buildCmds:
-            - GOOS={{OS}} GOARCH={{ARCH}} make check-tcp
-          binary: dist/{{OS}}/{{ARCH}}/check-tcp
+            - GOOS={{.OS}} GOARCH={{.ARCH}} make check-tcp
+          binary: dist/{{.OS}}/{{.ARCH}}/check-tcp
       docker:
         registry: docker.io
         image: octocompose/tools
@@ -63,8 +66,8 @@ repos:
           repo: https://github.com/demoproject/demoproject.git
           ref: refs/tags/v2.0.0
           buildCmds:
-            - GOOS={{OS}} GOARCH={{ARCH}} make demoproject-nats
-          binary: dist/{{OS}}/{{ARCH}}/demoproject-nats
+            - GOOS={{.OS}} GOARCH={{.ARCH}} make demoproject-nats
+          binary: dist/{{.OS}}/{{.ARCH}}/demoproject-nats
       docker:
         registry: docker.io
         image: demoproject/demoproject-nats

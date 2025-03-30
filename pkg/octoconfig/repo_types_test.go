@@ -17,7 +17,7 @@ func TestRepoFileUnmarshal(t *testing.T) {
 	require.NoError(t, err)
 
 	// Unmarshal the YAML into our repo struct
-	var repo RepoFile
+	var repo Repo
 	err = config.Parse(nil, "repos", yamlData, &repo)
 	require.NoError(t, err)
 
@@ -45,7 +45,7 @@ func TestRepoFileUnmarshal(t *testing.T) {
 	// Source
 	require.NotNil(t, baremetalOperator.Source, "Source config should not be nil")
 	require.Equal(t, "https://github.com/octocompose/operator-baremetal.git",
-		baremetalOperator.Source.URL.String())
+		baremetalOperator.Source.Repo.String())
 	require.Equal(t, "refs/tags/v0.0.1",
 		baremetalOperator.Source.Ref)
 	require.Len(t, baremetalOperator.Source.BuildCmds, 1)

@@ -8,14 +8,6 @@
 go run ./cmd/octoctl/... config show -c config.yaml
 ```
 
-### Docker compose
-
-```
-go run ./cmd/octoctl/... config compose -c config.yaml > compose.yaml
-```
-
-Run `docker compose up`
-
 ## Overview
 
 `octoctl` is the command-line tool for [OctoCompose](https://octocompose.dev/).
@@ -32,6 +24,18 @@ go install github.com/octocompose/octoctl/cmd/octoctl@main
 
 ```sh
 octoctl --help
+```
+
+## Development
+
+### Prerequisites
+
+- [Go 1.24.1](https://golang.org/dl/)
+
+### Build and Run
+
+```sh
+make && ./dist/linux/amd64/octoctl start -c config.yaml -c development.yaml --force-build-operator -l debug
 ```
 
 ## Authors

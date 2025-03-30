@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-orb/go-orb/config"
 	"github.com/go-orb/go-orb/log"
 
 	"github.com/stretchr/testify/require"
@@ -32,25 +33,25 @@ func setupTestConfig() *Config {
 
 func TestCollectConfigs(t *testing.T) {
 	// Create a Config with multiple paths
-	config := setupTestConfig()
+	cfg := setupTestConfig()
 
 	// Create test URLConfigs
-	url1, err := NewJURL("file:///path/to/config1.json")
+	url1, err := config.NewURL("file:///path/to/config1.json")
 	require.NoError(t, err)
-	url11, err := NewJURL("file:///path/to/config11.json")
+	url11, err := config.NewURL("file:///path/to/config11.json")
 	require.NoError(t, err)
-	url111, err := NewJURL("file:///path/to/config111.json")
+	url111, err := config.NewURL("file:///path/to/config111.json")
 	require.NoError(t, err)
-	url112, err := NewJURL("file:///path/to/config112.json")
+	url112, err := config.NewURL("file:///path/to/config112.json")
 	require.NoError(t, err)
 
-	url2, err := NewJURL("file:///path/to/config2.json")
+	url2, err := config.NewURL("file:///path/to/config2.json")
 	require.NoError(t, err)
-	url21, err := NewJURL("file:///path/to/config21.json")
+	url21, err := config.NewURL("file:///path/to/config21.json")
 	require.NoError(t, err)
-	url211, err := NewJURL("file:///path/to/config211.json")
+	url211, err := config.NewURL("file:///path/to/config211.json")
 	require.NoError(t, err)
-	url212, err := NewJURL("file:///path/to/config212.json")
+	url212, err := config.NewURL("file:///path/to/config212.json")
 	require.NoError(t, err)
 
 	config111 := &urlConfig{
@@ -97,10 +98,10 @@ func TestCollectConfigs(t *testing.T) {
 		Includes: []*urlConfig{config21},
 	}
 
-	config.Paths = append(config.Paths, config1, config2)
+	cfg.Paths = append(cfg.Paths, config1, config2)
 
 	// Test collectConfigs method
-	configs := config.collectConfigs()
+	configs := cfg.collectConfigs()
 
 	// Check that we have all configs in the right order
 	require.Len(t, configs, 8)
@@ -116,12 +117,12 @@ func TestCollectConfigs(t *testing.T) {
 
 func TestMerge(t *testing.T) {
 	// Create a test Config
-	config := setupTestConfig()
+	cfg := setupTestConfig()
 
 	// Create test URLConfigs
-	url1, err := NewJURL("file:///path/to/config1.json")
+	url1, err := config.NewURL("file:///path/to/config1.json")
 	require.NoError(t, err)
-	url2, err := NewJURL("file:///path/to/config2.json")
+	url2, err := config.NewURL("file:///path/to/config2.json")
 	require.NoError(t, err)
 
 	config1 := &urlConfig{
@@ -134,17 +135,17 @@ func TestMerge(t *testing.T) {
 		Data: map[string]any{"key2": "value2", "shared": "value2"},
 	}
 
-	config.Paths = append(config.Paths, config1, config2)
+	cfg.Paths = append(cfg.Paths, config1, config2)
 
 	// Test Merge method
-	err = config.Merge(t.Context())
+	err = cfg.merge(t.Context())
 	require.NoError(t, err)
 
 	// Check merged data (should be in reverse order for priority)
-	require.Equal(t, "value1", config.Data["key1"])
-	require.Equal(t, "value2", config.Data["key2"])
+	require.Equal(t, "value1", cfg.Data["key1"])
+	require.Equal(t, "value2", cfg.Data["key2"])
 	// First defined config (config1) should have priority
-	require.Equal(t, "value1", config.Data["shared"])
+	require.Equal(t, "value1", cfg.Data["shared"])
 }
 
 func TestApplyGlobals(t *testing.T) {
@@ -175,7 +176,7 @@ func TestApplyGlobals(t *testing.T) {
 	}
 
 	// Test ApplyGlobals method
-	err := config.ApplyGlobals()
+	err := config.applyGlobals()
 	require.NoError(t, err)
 
 	// Check that globals were applied
@@ -214,7 +215,7 @@ func TestApplyGlobalsWithNoServiceConfig(t *testing.T) {
 	}
 
 	// Test ApplyGlobals method
-	err := config.ApplyGlobals()
+	err := config.applyGlobals()
 	require.NoError(t, err)
 
 	// Check that globals were applied
@@ -232,11 +233,11 @@ func TestFlatten(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Create a test Config
-	config := setupTestConfig()
+	cfg := setupTestConfig()
 
 	// Create a nested URL config structure
 	mainConfigPath := filepath.Join(tempDir, "main.json")
-	mainURL, err := NewJURL("file://" + mainConfigPath)
+	mainURL, err := config.NewURL("file://" + mainConfigPath)
 	require.NoError(t, err)
 	mainConfig := &urlConfig{
 		URL:  mainURL,
@@ -244,7 +245,7 @@ func TestFlatten(t *testing.T) {
 	}
 
 	includeConfigPath := filepath.Join(tempDir, "include.json")
-	includeURL, err := NewJURL("file://" + includeConfigPath)
+	includeURL, err := config.NewURL("file://" + includeConfigPath)
 	require.NoError(t, err)
 	includeConfig := &urlConfig{
 		URL:  includeURL,
@@ -252,7 +253,7 @@ func TestFlatten(t *testing.T) {
 	}
 
 	mainConfig.Includes = append(mainConfig.Includes, includeConfig)
-	config.Paths = append(config.Paths, mainConfig)
+	cfg.Paths = append(cfg.Paths, mainConfig)
 
 	// Test Flatten method by collecting all items from the Seq
 	flattenedSeq := mainConfig.Flatten()

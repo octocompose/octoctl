@@ -1,6 +1,0 @@
-services:
-  collaboration:
-    docker:
-      registry: docker.io
-      image: opencloudeu/opencloud-rolling
-      tag: 1.1.0

@@ -1,6 +1,0 @@
-services:
-  collabora:
-    docker:
-      registry: docker.io
-      image: collabora/code
-      tag: 24.04.13.2.1

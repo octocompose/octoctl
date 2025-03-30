@@ -1,12 +1,9 @@
-projectID: jRganCCBmeSvU6YM5AvLhn
+name: opencloud01
 
 include:
-  - url: ./octocompose-chart/config/opencloud.yaml
-  - url: ./octocompose-chart/config/traefik.yaml
-  - url: ./octocompose-chart/config/posix.yaml
-  - url: ./octocompose-chart/config/collabora.yaml
+  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/opencloud.yaml
+  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/traefik.yaml
+  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/collabora.yaml
 
 octoctl:
-  operator: baremetal
-
-
+  operator: docker

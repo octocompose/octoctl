@@ -1,7 +1,10 @@
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
+
 .PHONY: build
-build: 
-	mkdir -p dist
-	go build -tags 'netgo,disable_crypt' -buildmode=pie -trimpath -ldflags '-s' -o dist/octoctl -v ./cmd/octoctl
+build:
+	mkdir -p dist/$(GOOS)/$(GOARCH)
+	go build -tags 'netgo,disable_crypt' -buildmode=pie -trimpath -ldflags '-s' -o dist/$(GOOS)/$(GOARCH)/octoctl -v ./cmd/octoctl
 
 .PHONY: clean
 clean:
