@@ -2,8 +2,34 @@ name: opencloud01
 
 include:
   - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/opencloud.yaml
-  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/traefik.yaml
   - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/collabora.yaml
+  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/tika.yaml
+  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/traefik.yaml
+
+  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/web_extensions/all.yaml
+
+configs:
+    collabora:
+        admin:
+            password: notSecure
+            user: admin
+    opencloud:
+        domain:
+            collabora: collabora.example.com
+            companion: companion.example.com
+            oc: cloud.example.com
+            onlyoffice: onlyoffice.example.com
+            wopiserver: wopiserver.example.com
+        idp:
+            adminPassword: notSecure
+        smtp:
+            authentication: plain
+            host: mail.example.com
+            insecure: "false"
+            password: "notSecure"
+            port: 587
+            sender: OpenCloud notifications <cloud@example.com>
+            username: cloud@example.com
 
 octoctl:
   operator: docker

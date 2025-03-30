@@ -45,7 +45,7 @@ configs:
             collabora: collabora.example.com
             companion: companion.example.com
             oc: cloud.example.com
-            onlyoffice: onlyoffice.opencloud.test
+            onlyoffice: onlyoffice.example.com
             wopiserver: wopiserver.example.com
         idp:
             adminPassword: notSecure
@@ -57,6 +57,11 @@ configs:
             port: 587
             sender: OpenCloud notifications <cloud@example.com>
             username: cloud@example.com
+
+    traefik:
+        acme:
+            email: cloud@example.com
+
 octoctl:
   operator: docker
 ```
