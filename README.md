@@ -10,7 +10,7 @@
 
 ```sh
 mkdir -p ~/.local/bin
-curl -L https://github.com/octocompose/octoctl/releases/download/v0.0.5/octoctl_0.0.5_linux_amd64 -o ~/.local/bin/octoctl
+curl -L https://github.com/octocompose/octoctl/releases/download/v0.0.7/octoctl_0.0.7_linux_amd64 -o ~/.local/bin/octoctl
 chmod +x ~/.local/bin/octoctl
 ```
 
@@ -20,101 +20,11 @@ chmod +x ~/.local/bin/octoctl
 go install github.com/octocompose/octoctl/cmd/octoctl@main
 ```
 
-## Install `opencloud` with OctoCompose
+### Example Apps
 
-#### Create a config
-
-```yaml
-name: opencloud01
-
-include:
-  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/opencloud.yaml
-  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/collabora.yaml
-  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/tika.yaml
-  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/traefik.yaml
-
-  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/web_extensions/all.yaml
-
-configs:
-    collabora:
-        admin:
-            password: notSecure
-            user: admin
-    opencloud:
-        domain:
-            collabora: collabora.example.com
-            companion: companion.example.com
-            oc: cloud.example.com
-            onlyoffice: onlyoffice.example.com
-            wopiserver: wopiserver.example.com
-        idp:
-            adminPassword: notSecure
-        smtp:
-            authentication: plain
-            host: mail.example.com
-            insecure: "false"
-            password: "notSecure"
-            port: 587
-            sender: OpenCloud notifications <cloud@example.com>
-            username: cloud@example.com
-
-    traefik:
-        acme:
-            email: cloud@example.com
-            caserver: "https://acme-v02.api.letsencrypt.org/directory"
-
-octoctl:
-  operator: docker
-```
-
-#### Run it
-
-```sh
-octoctl -c config.yaml start
-```
-
-#### Show the `compose.yaml` it generates
-
-```sh
-octoctl -c config.yaml show
-```
-
-## Install `penpot`
-
-```yaml
-name: penpot01
-
-include:
-  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/penpot/config/all.yaml
-
-configs:
-  penpot:
-    public_uri: https://penpot.example.com
-    flags: disable-email-verification enable-smtp enable-prepl-server disable-secure-session-cookies
-    sizes:
-      max_body: "31457280"
-      max_multipart_body: "367001600"
-    postgres:
-      url: postgresql://postgres/penpot
-      user: penpot
-      password: penpot
-  postgres:
-    db: penpot
-    user: penpot
-    password: penpot
-  smtp:
-    from: penpot@example.com
-    reply_to: me@example.com
-    host: mail.example.com
-    port: 587
-    username: penpot
-    password: penpot
-    tls: true
-    ssl: false
-
-octoctl:
-  operator: docker
-```
+- [OpenCloud](https://github.com/octocompose/charts/blob/main/examples/opencloud.yaml)
+- [OpenCloud with external ingress](https://github.com/octocompose/charts/blob/main/examples/opencloud-exterrnal-ingress.yaml)
+- [Penpot](https://github.com/octocompose/charts/blob/main/examples/penpot.yaml)
 
 ## Usage
 
