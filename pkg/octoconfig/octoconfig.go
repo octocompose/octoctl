@@ -195,7 +195,7 @@ func (c *Config) readRepo(ctx context.Context, url *config.URL, parent *Repo) er
 	tmpRepo.URL = url
 
 	if err := config.Parse(nil, "", data, tmpRepo); err != nil {
-		return err
+		return fmt.Errorf("while parsing repository '%s': %w", url.String(), err)
 	}
 
 	parent.Children = append(parent.Children, tmpRepo)
@@ -285,7 +285,7 @@ func (c *Config) readURL(ctx context.Context, fileConfig *urlConfig) error {
 	err = config.Parse(nil, "repos", fileConfig.Data, fileConfig.Repo)
 	if err != nil {
 		if !errors.Is(err, config.ErrNoSuchKey) {
-			mErr = multierror.Append(mErr, err)
+			mErr = multierror.Append(mErr, fmt.Errorf("while parsing repository '%s': %w", fileConfig.URL.String(), err))
 		}
 	}
 
@@ -301,7 +301,7 @@ func (c *Config) readURL(ctx context.Context, fileConfig *urlConfig) error {
 
 	if err := config.ParseSlice([]string{}, "include", fileConfig.Data, &includes); err != nil {
 		if !errors.Is(err, config.ErrNoSuchKey) {
-			mErr = multierror.Append(mErr, err)
+			mErr = multierror.Append(mErr, fmt.Errorf("while parsing includes '%s': %w", fileConfig.URL.String(), err))
 		}
 
 		return mErr.ErrorOrNil()
@@ -487,7 +487,7 @@ func (c *Config) read(ctx context.Context) error {
 }
 
 // mergeRepos reads and merges repos from the config(s).
-func (c *Config) mergeRepos(ctx context.Context) error {
+func (c *Config) mergeRepos(_ context.Context) error {
 	mErr := &multierror.Error{}
 
 	repoFiles := []*Repo{}
@@ -515,7 +515,7 @@ func (c *Config) mergeRepos(ctx context.Context) error {
 	data, err := config.ParseStruct(nil, c.Repo)
 
 	if err != nil {
-		mErr = multierror.Append(mErr, err)
+		mErr = multierror.Append(mErr, fmt.Errorf("while parsing repos: %w", err))
 		return mErr.ErrorOrNil()
 	}
 
@@ -551,7 +551,7 @@ func (c *Config) merge(_ context.Context) error {
 	var mErr *multierror.Error
 
 	// Merge hardcoded data first.
-	if err := config.Merge(&c.Data, c.HardcodedData); err != nil {
+	if err := mergo.Merge(&c.Data, c.HardcodedData, mergo.WithOverride, mergo.WithAppendSlice); err != nil {
 		mErr = multierror.Append(mErr, err)
 	}
 
@@ -559,7 +559,7 @@ func (c *Config) merge(_ context.Context) error {
 		// Log that we're merging this config.
 		c.logger.Trace("Merging config", "url", cfg.URL.String())
 
-		if err := config.Merge(&c.Data, cfg.Data); err != nil {
+		if err := mergo.Merge(&c.Data, cfg.Data, mergo.WithOverride, mergo.WithAppendSlice); err != nil {
 			mErr = multierror.Append(mErr, err)
 		}
 	}
@@ -567,7 +567,7 @@ func (c *Config) merge(_ context.Context) error {
 	// Load octoctl config.
 	c.Octoctl = &OctoctlConfig{}
 	if err := config.Parse([]string{}, "octoctl", c.Data, c.Octoctl); err != nil {
-		mErr = multierror.Append(mErr, err)
+		mErr = multierror.Append(mErr, fmt.Errorf("while parsing octoctl: %w", err))
 	}
 
 	return mErr.ErrorOrNil()
@@ -636,14 +636,14 @@ func (c *Config) applyGlobals() error {
 			return fmt.Errorf("service '%s' requires global config '%s', but it was not found", name, servicesSvcConfig.Globals)
 		}
 
-		if err := config.Merge(&mergedConfig, svcGlobal); err != nil {
+		if err := mergo.Merge(&mergedConfig, svcGlobal, mergo.WithOverride, mergo.WithAppendSlice); err != nil {
 			return err
 		}
 
 		// Then merge in the service configuration so it takes precedence.
 		svcConfig, ok := servicesConfig[name].(map[string]any)
 		if ok {
-			if err := config.Merge(&mergedConfig, svcConfig); err != nil {
+			if err := mergo.Merge(&mergedConfig, svcConfig, mergo.WithOverride, mergo.WithAppendSlice); err != nil {
 				return err
 			}
 		}

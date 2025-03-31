@@ -1,11 +1,11 @@
 name: opencloud01
 
 include:
-  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/opencloud.yaml
-  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/collabora.yaml
-  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/tika.yaml
+  - url: ../../../charts/opencloud-monolith/config/opencloud.yaml
+  - url: ../../../charts/opencloud-monolith/config/collabora.yaml
+  - url: ../../../charts/opencloud-monolith/config/tika.yaml
 
-  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/web_extensions/all.yaml
+  - url: ../../../charts/opencloud-monolith/config/web_extensions/all.yaml
 
 configs:
     collabora:
