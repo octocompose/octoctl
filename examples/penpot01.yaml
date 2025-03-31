@@ -1,6 +1,7 @@
 name: penpot01
+
 include:
-  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/penpot/config/all.yaml
+  - url: ../../charts/apps/penpot/config/all.yaml
 
 configs:
   penpot:
@@ -28,4 +29,4 @@ configs:
     ssl: false
 
 octoctl:
-  operator: docker
+  operator: podman

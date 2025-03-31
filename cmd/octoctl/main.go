@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -167,10 +166,21 @@ func runOperator(ctx context.Context, cmd *cli.Command, args []string) error {
 		return err
 	}
 
+	cfgPath, err := octocache.Path(cfg.ProjectID, "config.json")
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(cfgPath, b, 0o600); err != nil {
+		return fmt.Errorf("while writing config file: %w", err)
+	}
+
+	args = append([]string{"--config", cfgPath}, args...)
+
 	logger.Debug("Running operator", "path", execPath, "args", args)
 
 	execCmd := exec.CommandContext(ctx, execPath, args...) //nolint:gosec
-	execCmd.Stdin = bytes.NewReader(b)
+	execCmd.Stdin = os.Stdin
 	execCmd.Stdout = os.Stdout
 	execCmd.Stderr = os.Stderr
 
@@ -277,6 +287,21 @@ func main() {
 					if cmd.Bool("follow") {
 						args = append(args, "--follow")
 					}
+
+					if cmd.Args().Len() > 0 {
+						args = append(args, cmd.Args().Slice()...)
+					}
+
+					return runOperator(ctx, cmd, args)
+				},
+			},
+			{
+				Name:      "exec",
+				Usage:     "Exec into a service.",
+				ArgsUsage: "[service] [command]",
+				Before:    createConfig,
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					args := []string{"--log-level", cmd.String("log-level"), "exec"}
 
 					if cmd.Args().Len() > 0 {
 						args = append(args, cmd.Args().Slice()...)
