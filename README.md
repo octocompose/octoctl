@@ -10,7 +10,7 @@
 
 ```sh
 mkdir -p ~/.local/bin
-curl -L https://github.com/octocompose/octoctl/releases/download/v0.0.4/octoctl_0.0.4_linux_amd64 -o ~/.local/bin/octoctl
+curl -L https://github.com/octocompose/octoctl/releases/download/v0.0.5/octoctl_0.0.5_linux_amd64 -o ~/.local/bin/octoctl
 chmod +x ~/.local/bin/octoctl
 ```
 
