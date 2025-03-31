@@ -344,6 +344,8 @@ func (c *Config) readURL(ctx context.Context, fileConfig *urlConfig) error {
 type Config struct {
 	logger log.Logger
 
+	clearCache bool
+
 	Paths   []*urlConfig
 	Repo    *Repo
 	Octoctl *OctoctlConfig
@@ -360,7 +362,7 @@ type Config struct {
 }
 
 // New creates a new configuration from the given paths.
-func New(logger log.Logger, paths []string, hardcodedData map[string]any) (*Config, error) {
+func New(logger log.Logger, clearCache bool, paths []string, hardcodedData map[string]any) (*Config, error) {
 	cfg := &Config{logger: logger, Paths: []*urlConfig{}, KnownURLs: map[string]struct{}{}, Repo: &Repo{}, HardcodedData: hardcodedData}
 
 	for _, path := range paths {
@@ -394,6 +396,7 @@ func New(logger log.Logger, paths []string, hardcodedData map[string]any) (*Conf
 	}
 
 	cfg.HardcodedData = hardcodedData
+	cfg.clearCache = clearCache
 
 	return cfg, nil
 }
@@ -402,6 +405,12 @@ func New(logger log.Logger, paths []string, hardcodedData map[string]any) (*Conf
 func (c *Config) Run(ctx context.Context) error {
 	if err := c.ensureProjectID(ctx); err != nil {
 		return err
+	}
+
+	if c.clearCache {
+		if err := octocache.ClearCache(c.ProjectID); err != nil {
+			return err
+		}
 	}
 
 	if err := c.read(ctx); err != nil {

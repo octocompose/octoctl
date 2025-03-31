@@ -95,6 +95,25 @@ func checkSha256Sum(filePath, checksumPath string) error {
 	return nil
 }
 
+func ClearCache(projectID string) error {
+	userCacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return err
+	}
+
+	if err := os.RemoveAll(filepath.Join(userCacheDir, "octocompose", projectID, "configs")); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(filepath.Join(userCacheDir, "octocompose", projectID, "files")); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(filepath.Join(userCacheDir, "octocompose", projectID, "template")); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Path returns the path to the cache directory for a given project and paths.
 func Path(projectID string, paths ...string) (string, error) {
 	userCacheDir, err := os.UserCacheDir()

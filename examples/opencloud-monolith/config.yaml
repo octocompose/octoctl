@@ -4,7 +4,6 @@ include:
   - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/opencloud.yaml
   - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/collabora.yaml
   - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/tika.yaml
-  - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/traefik.yaml
 
   - url: https://raw.githubusercontent.com/octocompose/charts/refs/heads/main/opencloud-monolith/config/web_extensions/all.yaml
 

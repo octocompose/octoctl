@@ -61,6 +61,7 @@ configs:
     traefik:
         acme:
             email: cloud@example.com
+            caserver: "https://acme-v02.api.letsencrypt.org/directory"
 
 octoctl:
   operator: docker

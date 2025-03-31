@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/go-orb/go-orb/codecs"
@@ -59,7 +60,7 @@ func createConfig(ctx context.Context, cmd *cli.Command) (context.Context, error
 		return ctx, err
 	}
 
-	cfg, err := octoconfig.New(logger, cmd.StringSlice("config"), hardCodedData)
+	cfg, err := octoconfig.New(logger, cmd.Bool("clear-cache"), cmd.StringSlice("config"), hardCodedData)
 	if err != nil {
 		logger.Error("Error while creating configuration", "error", err)
 		return ctx, err
@@ -202,6 +203,10 @@ func main() {
 				Name:  "force-build-operator",
 				Usage: "Force build the operator.",
 			},
+			&cli.BoolFlag{
+				Name:  "clear-cache",
+				Usage: "Clear the cache.",
+			},
 		},
 		Commands: []*cli.Command{
 			{
@@ -238,26 +243,27 @@ func main() {
 					return runOperator(ctx, cmd, args)
 				},
 			},
-			// {
-			// 	Name:  "restart",
-			// 	Usage: "Restarts the services.",
-			// 	Flags: []cli.Flag{
-			// 		&cli.BoolFlag{
-			// 			Name: "dry-run",
-			// 		},
-			// 	},
-			// 	Before: createConfig,
-			// 	Action: func(ctx context.Context, cmd *cli.Command) error {
-			// 		args := []string{"--log-level", cmd.String("log-level"), "restart"}
-			// 		if cmd.Bool("dry-run") {
-			// 			args = append(args, "--dry-run")
-			// 		}
-			// 		return runOperator(ctx, cmd, args)
-			// 	},
-			// },
 			{
-				Name:  "logs",
-				Usage: "Shows logs from services.",
+				Name:  "restart",
+				Usage: "Restarts the services.",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name: "dry-run",
+					},
+				},
+				Before: createConfig,
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					args := []string{"--log-level", cmd.String("log-level"), "restart"}
+					if cmd.Bool("dry-run") {
+						args = append(args, "--dry-run")
+					}
+					return runOperator(ctx, cmd, args)
+				},
+			},
+			{
+				Name:      "logs",
+				Usage:     "Shows logs from services.",
+				ArgsUsage: "[service]",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "follow",
@@ -271,6 +277,11 @@ func main() {
 					if cmd.Bool("follow") {
 						args = append(args, "--follow")
 					}
+
+					if cmd.Args().Len() > 0 {
+						args = append(args, cmd.Args().Slice()...)
+					}
+
 					return runOperator(ctx, cmd, args)
 				},
 			},
@@ -289,6 +300,20 @@ func main() {
 				Before: createConfig,
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					args := []string{"--log-level", cmd.String("log-level"), "show"}
+					return runOperator(ctx, cmd, args)
+				},
+			},
+			{
+				Name:   "compose",
+				Usage:  "Runs docker compose commands.",
+				Before: createConfig,
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					args := []string{"--log-level", cmd.String("log-level"), "compose"}
+					// Capture arguments after "--"
+					if idx := slices.Index(cmd.Args().Slice(), "--"); idx != -1 {
+						args = append(args, "--")
+						args = append(args, cmd.Args().Slice()[idx+1:]...)
+					}
 					return runOperator(ctx, cmd, args)
 				},
 			},
