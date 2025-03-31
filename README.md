@@ -9,9 +9,7 @@
 ### From Release
 
 ```sh
-mkdir -p ~/.local/bin
-curl -L https://github.com/octocompose/octoctl/releases/download/v0.0.7/octoctl_0.0.7_linux_amd64 -o ~/.local/bin/octoctl
-chmod +x ~/.local/bin/octoctl
+curl -sL https://get.octocompose.dev | sh
 ```
 
 ### From Source
