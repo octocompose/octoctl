@@ -29,4 +29,4 @@ configs:
     ssl: false
 
 octoctl:
-  operator: docker
+  operator: nerdctl

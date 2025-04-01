@@ -2,9 +2,13 @@
 
 ## Overview
 
-`octoctl` is the command-line tool for [OctoCompose](https://octocompose.dev/).
+`octoctl` is the command-line tool for [OctoCompose](https://octocompose.dev/), at its core it is a wrapper for `docker compose`, `podman-compose` and `nerdctl compose`.
 
-## Installation
+It extends the functionality of those by adding includes of url's. See the ready-to-install [penpot](https://github.com/octocompose/charts/blob/main/examples/penpot.yaml) app for an example.
+
+Instead of cloning `github` repos configuring an `.env` file you download a `config.yaml` configure it for you needs and run the app.
+
+## Installing
 
 ### From Release
 
@@ -18,7 +22,7 @@ curl -sL https://get.octocompose.dev | sh
 go install github.com/octocompose/octoctl/cmd/octoctl@main
 ```
 
-### Example Apps
+### Pre-build Apps
 
 - [OpenCloud](https://github.com/octocompose/charts/blob/main/examples/opencloud.yaml)
 - [OpenCloud with external ingress](https://github.com/octocompose/charts/blob/main/examples/opencloud-exterrnal-ingress.yaml)

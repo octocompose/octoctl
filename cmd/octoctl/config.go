@@ -35,4 +35,20 @@ repos:
         buildCmds:
           - GOOS={{.OS}} GOARCH={{.ARCH}} make build
         binary: dist/{{.OS}}/{{.ARCH}}/operator-podman
+    nerdctl:
+      binary:
+        linux_amd64:
+          url: https://github.com/octocompose/operator-nerdctl/releases/download/v0.0.7/operator-nerdctl_0.0.7_linux_amd64
+          sha256Url: https://github.com/octocompose/operator-nerdctl/releases/download/v0.0.7/operator-nerdctl_0.0.7_linux_amd64.sha256
+        linux_arm64:
+          url: https://github.com/octocompose/operator-nerdctl/releases/download/v0.0.7/operator-nerdctl_0.0.7_linux_arm64
+          sha256Url: https://github.com/octocompose/operator-nerdctl/releases/download/v0.0.7/operator-nerdctl_0.0.7_linux_arm64.sha256
+      source:
+        # If path is set and existing, repo and ref are ignored.
+        path: ../operator-nerdctl
+        repo: https://github.com/octocompose/operator-nerdctl.git
+        ref: refs/heads/main
+        buildCmds:
+          - GOOS={{.OS}} GOARCH={{.ARCH}} make build
+        binary: dist/{{.OS}}/{{.ARCH}}/operator-nerdctl
 `
