@@ -34,6 +34,30 @@ go install github.com/octocompose/octoctl/cmd/octoctl@main
 octoctl --help
 ```
 
+```
+NAME:
+   octoctl - Service Orchestration Made Simple
+USAGE:
+   octoctl [command [command options]] 
+COMMANDS:
+   start    Starts the services.
+   stop     Stops the services.
+   restart  Restarts the services.
+   logs     Shows logs from services.
+   exec     Exec into a service.
+   status   Shows status of services.
+   show     Shows the running configuration.
+   compose  Runs docker compose commands.
+   config   Manages the service configurations.
+OPTIONS:
+   --log-level value, -l value                            Set the log level (debug, info, warn, error) (default: "info")
+   --config value, -c value [ --config value, -c value ]  Path to configuration files
+   --force-build-operator                                 Force build the operator. (default: false)
+   --clear-cache                                          Clear the cache. (default: false)
+   --help, -h                                             show help
+   --version, -v                                          print the version
+```
+
 ### The `octoctl compose` command
 
 This command is special as it needs `--` to separate the flags for `octoctl` from the flags for `docker compose`.
