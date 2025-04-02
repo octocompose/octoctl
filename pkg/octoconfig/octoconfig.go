@@ -497,10 +497,11 @@ func (c *Config) mergeRepos(_ context.Context) error {
 
 	slices.Reverse(repoFiles)
 
+	// Merge all repo files.
 	for _, repoFile := range repoFiles {
 		repoFile.Include = nil
 
-		if err := mergo.Merge(c.Repo, repoFile); err != nil {
+		if err := mergo.Merge(c.Repo, repoFile, mergo.WithAppendSlice); err != nil {
 			mErr = multierror.Append(mErr, err)
 			continue
 		}
@@ -509,7 +510,7 @@ func (c *Config) mergeRepos(_ context.Context) error {
 	// Merge the repos from the config file.
 	repoFile := &Repo{}
 	if err := config.Parse(nil, "repos", c.Data, repoFile); err == nil {
-		mergo.Merge(c.Repo, repoFile)
+		mergo.Merge(c.Repo, repoFile, mergo.WithAppendSlice)
 	}
 
 	data, err := config.ParseStruct(nil, c.Repo)
@@ -551,7 +552,7 @@ func (c *Config) merge(_ context.Context) error {
 	var mErr *multierror.Error
 
 	// Merge hardcoded data first.
-	if err := mergo.Merge(&c.Data, c.HardcodedData, mergo.WithOverride, mergo.WithAppendSlice); err != nil {
+	if err := mergo.Merge(&c.Data, c.HardcodedData, mergo.WithAppendSlice); err != nil {
 		mErr = multierror.Append(mErr, err)
 	}
 
@@ -559,7 +560,7 @@ func (c *Config) merge(_ context.Context) error {
 		// Log that we're merging this config.
 		c.logger.Trace("Merging config", "url", cfg.URL.String())
 
-		if err := mergo.Merge(&c.Data, cfg.Data, mergo.WithOverride, mergo.WithAppendSlice); err != nil {
+		if err := mergo.Merge(&c.Data, cfg.Data, mergo.WithAppendSlice); err != nil {
 			mErr = multierror.Append(mErr, err)
 		}
 	}
@@ -636,14 +637,14 @@ func (c *Config) applyGlobals() error {
 			return fmt.Errorf("service '%s' requires global config '%s', but it was not found", name, servicesSvcConfig.Globals)
 		}
 
-		if err := mergo.Merge(&mergedConfig, svcGlobal, mergo.WithOverride, mergo.WithAppendSlice); err != nil {
+		if err := mergo.Merge(&mergedConfig, svcGlobal, mergo.WithAppendSlice); err != nil {
 			return err
 		}
 
 		// Then merge in the service configuration so it takes precedence.
 		svcConfig, ok := servicesConfig[name].(map[string]any)
 		if ok {
-			if err := mergo.Merge(&mergedConfig, svcConfig, mergo.WithOverride, mergo.WithAppendSlice); err != nil {
+			if err := mergo.Merge(&mergedConfig, svcConfig, mergo.WithAppendSlice); err != nil {
 				return err
 			}
 		}
