@@ -513,13 +513,46 @@ func (c *Config) mergeRepos(_ context.Context) error {
 		mergo.Merge(c.Repo, repoFile, mergo.WithOverride, mergo.WithAppendSlice)
 	}
 
-	data, err := config.ParseStruct(nil, c.Repo)
+	// Template c.Repo
+	codec, err := codecs.GetMime(codecs.MimeYAML)
+	if err != nil {
+		mErr = multierror.Append(mErr, fmt.Errorf("while getting codec: %w", err))
+		return mErr.ErrorOrNil()
+	}
 
+	b, err := codec.Marshal(c.Repo)
+	if err != nil {
+		mErr = multierror.Append(mErr, fmt.Errorf("while marshaling repo: %w", err))
+		return mErr.ErrorOrNil()
+	}
+
+	templateVars := c.TemplateVars()
+	t, err := template.New("template").Parse(string(b))
+	if err != nil {
+		mErr = multierror.Append(mErr, fmt.Errorf("while parsing template: %w", err))
+		return mErr.ErrorOrNil()
+	}
+
+	buf := &bytes.Buffer{}
+	if err := t.Execute(buf, templateVars); err != nil {
+		mErr = multierror.Append(mErr, fmt.Errorf("while executing template: %w", err))
+		return mErr.ErrorOrNil()
+	}
+
+	newRepo := &Repo{}
+	if err := codec.Unmarshal(buf.Bytes(), newRepo); err != nil {
+		mErr = multierror.Append(mErr, fmt.Errorf("while unmarshaling repo: %w", err))
+		return mErr.ErrorOrNil()
+	}
+	c.Repo = newRepo
+
+	data, err := config.ParseStruct(nil, newRepo)
 	if err != nil {
 		mErr = multierror.Append(mErr, fmt.Errorf("while parsing repos: %w", err))
 		return mErr.ErrorOrNil()
 	}
 
+	// Set back into the config file.
 	if c.Data == nil {
 		c.Data = make(map[string]any)
 	}
